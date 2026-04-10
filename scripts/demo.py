@@ -10,10 +10,8 @@ async def main():
     tmp = Path(tempfile.mkdtemp(prefix="cortex_demo_"))
     engine = CortexEngine(base_path=tmp)
 
-    print("=== Cortex Claude Demo ===\n")
-    print(f"Storage: {tmp}\n")
+    print("=== Cortex Claude Phase 2 Demo ===\n")
 
-    # Save some memories
     memories = [
         ("The auth service uses JWT tokens with 24-hour expiry. Refresh tokens are stored in httpOnly cookies.", ["auth", "jwt"]),
         ("The API is rate limited to 1000 requests per minute per API key. Rate limiting uses a sliding window algorithm.", ["api", "rate-limit"]),
@@ -22,46 +20,51 @@ async def main():
         ("Deployments go through GitHub Actions CI/CD. Production runs on AWS ECS Fargate.", ["infra", "deploy"]),
     ]
 
-    print("--- Saving memories ---\n")
+    print("--- Saving memories (with fact extraction + summarization) ---\n")
     for content, tags in memories:
         result = await engine.save(content=content, tags=tags)
         print(f"  [{result.scope}] {result.tokens_stored} tokens | {content[:60]}...")
 
-    print("\n--- Recall tests ---\n")
+    # Show extracted facts
+    print("\n--- Knowledge Graph (cortex_facts) ---\n")
+    for topic in ["auth", "api", "postgresql", "react", "deploy"]:
+        facts = await engine.get_facts(topic=topic)
+        if facts:
+            for f in facts:
+                print(f"  {f.subject} → {f.relation} → {f.object} ({f.confidence:.1f})")
 
-    queries = [
-        ("How does authentication work?", 200),
-        ("What database do we use?", 200),
-        ("How are deployments done?", 200),
-        ("rate limiting", 100),
-        ("frontend stack", 200),
-    ]
+    # Progressive recall demo
+    print("\n--- Progressive Recall Demo ---\n")
 
-    for query, budget in queries:
-        print(f'  Query: "{query}" (budget: {budget} tokens)')
-        result = await engine.recall(query=query, max_tokens=budget)
+    print("  depth='facts' (cheapest):")
+    r = await engine.recall("authentication", max_tokens=200, depth="facts")
+    for m in r.memories:
+        print(f"    {m.content}")
+    print(f"    → {r.total_tokens} tokens\n")
 
-        if not result.memories:
-            print("    No results.\n")
-            continue
+    print("  depth='summaries':")
+    r = await engine.recall("authentication", max_tokens=200, depth="summaries")
+    for m in r.memories:
+        print(f"    {m.content[:80]}...")
+    print(f"    → {r.total_tokens} tokens\n")
 
-        for item in result.memories:
-            tags_str = f" [{', '.join(item.tags)}]" if item.tags else ""
-            print(f"    score={item.score:.3f}{tags_str}")
-            print(f"    {item.content[:80]}...")
-        print(f"    Total: {result.total_tokens} tokens\n")
+    print("  depth='full':")
+    r = await engine.recall("authentication", max_tokens=500, depth="full")
+    for m in r.memories:
+        print(f"    {m.content[:80]}...")
+    print(f"    → {r.total_tokens} tokens\n")
 
-    # Scope isolation test
-    print("--- Scope isolation test ---\n")
+    print("  depth='auto' (progressive):")
+    r = await engine.recall("authentication", max_tokens=200, depth="auto")
+    for m in r.memories:
+        print(f"    {m.content[:80]}...")
+    print(f"    → {r.total_tokens} tokens\n")
 
-    await engine.save(content="This is a secret only for project X", scope="project:x")
-    await engine.save(content="This is global knowledge shared everywhere", scope="global")
-
-    r1 = await engine.recall(query="secret", scope="project:x")
-    r2 = await engine.recall(query="secret", scope="global")
-
-    print(f"  Search 'secret' in project:x → {len(r1.memories)} result(s)")
-    print(f"  Search 'secret' in global    → {len(r2.memories)} result(s)")
+    # Dedup test
+    print("--- Deduplication ---\n")
+    await engine.save(content="The API is rate limited to 1000 requests per minute per API key.")
+    r = await engine.recall("rate limit", depth="full", max_tokens=1000)
+    print(f"  After saving near-duplicate: {len(r.memories)} unique results")
 
     engine.close()
     shutil.rmtree(tmp)

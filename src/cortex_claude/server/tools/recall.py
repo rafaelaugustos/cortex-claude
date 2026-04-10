@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from cortex_claude.core.engine import CortexEngine
 
 
@@ -9,11 +11,13 @@ async def handle_recall(
     cwd: str,
     max_tokens: int = 200,
     scope: str | None = None,
+    depth: Literal["auto", "facts", "summaries", "full"] = "auto",
 ) -> str:
     result = await engine.recall(
         query=query,
         max_tokens=max_tokens,
         scope=scope,
+        depth=depth,
         cwd=cwd,
     )
 
