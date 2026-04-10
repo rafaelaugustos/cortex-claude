@@ -1,18 +1,37 @@
 from __future__ import annotations
 
+import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from cortex_claude.core.decay import recalculate_decay_scores
 from cortex_claude.core.scope_manager import ScopeManager
 from cortex_claude.core.token_budget import TokenBudget
 from cortex_claude.embeddings import EmbeddingEngine, count_tokens
 from cortex_claude.facts import extract_facts
 from cortex_claude.models.fact import Fact
 from cortex_claude.models.memory import Memory, RecallItem, RecallResult, SaveResult
+from cortex_claude.models.scope import ScopeInfo
 from cortex_claude.storage import FactRepository, MemoryRepository, StorageManager
 from cortex_claude.summarizer import summarize
 
 DEDUP_THRESHOLD = 0.92
+
+
+@dataclass
+class ForgetResult:
+    deleted: list[str]
+    scope: str
+    dry_run: bool
+
+
+@dataclass
+class StatusResult:
+    scopes: list[dict]
+    total_memories: int
+    total_facts: int
+    total_size_bytes: int
 
 
 class CortexEngine:
@@ -288,6 +307,159 @@ class CortexEngine:
             total_tokens=budget.used_tokens,
             query=query,
         )
+
+    async def forget(
+        self,
+        query: str | None = None,
+        memory_id: str | None = None,
+        scope: str | None = None,
+        dry_run: bool = True,
+        cwd: str = ".",
+    ) -> ForgetResult:
+        scopes = [scope] if scope else self._scope_manager.resolve(cwd)
+        target_scope = scopes[0]
+        to_delete: list[str] = []
+
+        if memory_id:
+            to_delete = [memory_id]
+        elif query:
+            query_embedding = self._embeddings.embed(query)
+            for s in scopes:
+                conn = self._storage.get_database(s)
+                results = self._memory_repo.search_by_vector(conn, query_embedding, limit=5)
+                for mid, score in results:
+                    if score > 0.3:
+                        to_delete.append(mid)
+                        target_scope = s
+
+        if not dry_run:
+            for mid in to_delete:
+                for s in scopes:
+                    conn = self._storage.get_database(s)
+                    memory = self._memory_repo.get(conn, mid)
+                    if memory:
+                        self._fact_repo.delete_by_memory(conn, mid)
+                        self._memory_repo.delete(conn, mid)
+                        target_scope = s
+                        break
+
+        return ForgetResult(deleted=to_delete, scope=target_scope, dry_run=dry_run)
+
+    async def manage_scopes(
+        self,
+        action: str,
+        name: str | None = None,
+        path: str | None = None,
+        cwd: str = ".",
+    ) -> dict:
+        if action == "list":
+            scope_names = self._storage.list_scopes()
+            infos = []
+            for s in scope_names:
+                conn = self._storage.get_database(s)
+                mem_count = self._memory_repo.count(conn)
+                fact_count = self._fact_repo.count(conn)
+                db_path = self._storage.get_database_path(s)
+                size = db_path.stat().st_size if db_path.exists() else 0
+                infos.append({
+                    "name": s,
+                    "memories": mem_count,
+                    "facts": fact_count,
+                    "size_bytes": size,
+                })
+            return {"action": "list", "scopes": infos}
+
+        elif action == "create" and name:
+            self._storage.get_database(name)
+            return {"action": "create", "scope": name, "status": "created"}
+
+        elif action == "delete" and name:
+            if name == "global":
+                return {"action": "delete", "scope": name, "status": "cannot delete global scope"}
+            self._storage.delete_scope(name)
+            return {"action": "delete", "scope": name, "status": "deleted"}
+
+        elif action == "link" and name and path:
+            config_path = self._base_path / "config.json"
+            import json
+            config = {}
+            if config_path.exists():
+                with open(config_path) as f:
+                    config = json.load(f)
+            config.setdefault("scopes", {}).setdefault("mappings", {})[path] = name
+            with open(config_path, "w") as f:
+                json.dump(config, f, indent=2)
+            self._scope_manager.reload()
+            return {"action": "link", "path": path, "scope": name, "status": "linked"}
+
+        elif action == "unlink" and path:
+            config_path = self._base_path / "config.json"
+            import json
+            config = {}
+            if config_path.exists():
+                with open(config_path) as f:
+                    config = json.load(f)
+            mappings = config.get("scopes", {}).get("mappings", {})
+            removed = mappings.pop(path, None)
+            with open(config_path, "w") as f:
+                json.dump(config, f, indent=2)
+            self._scope_manager.reload()
+            return {"action": "unlink", "path": path, "removed": removed, "status": "unlinked"}
+
+        elif action == "info" and name:
+            conn = self._storage.get_database(name)
+            db_path = self._storage.get_database_path(name)
+            return {
+                "action": "info",
+                "scope": name,
+                "memories": self._memory_repo.count(conn),
+                "facts": self._fact_repo.count(conn),
+                "size_bytes": db_path.stat().st_size if db_path.exists() else 0,
+            }
+
+        return {"action": action, "status": "invalid action or missing parameters"}
+
+    async def status(self, scope: str | None = None, cwd: str = ".") -> StatusResult:
+        scopes = [scope] if scope else self._storage.list_scopes()
+        if not scopes:
+            scopes = ["global"]
+
+        scope_infos = []
+        total_mem = 0
+        total_facts = 0
+        total_size = 0
+
+        for s in scopes:
+            conn = self._storage.get_database(s)
+            mem_count = self._memory_repo.count(conn)
+            fact_count = self._fact_repo.count(conn)
+            db_path = self._storage.get_database_path(s)
+            size = db_path.stat().st_size if db_path.exists() else 0
+
+            scope_infos.append({
+                "name": s,
+                "memories": mem_count,
+                "facts": fact_count,
+                "size_bytes": size,
+            })
+            total_mem += mem_count
+            total_facts += fact_count
+            total_size += size
+
+        return StatusResult(
+            scopes=scope_infos,
+            total_memories=total_mem,
+            total_facts=total_facts,
+            total_size_bytes=total_size,
+        )
+
+    async def run_decay(self, scope: str | None = None, cwd: str = ".") -> int:
+        scopes = [scope] if scope else self._storage.list_scopes()
+        total = 0
+        for s in scopes:
+            conn = self._storage.get_database(s)
+            total += recalculate_decay_scores(conn)
+        return total
 
     def close(self) -> None:
         self._storage.close_all()

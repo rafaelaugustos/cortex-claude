@@ -9,8 +9,11 @@ from mcp.server.fastmcp import FastMCP
 from cortex_claude.core.engine import CortexEngine
 from cortex_claude.server.config import CortexConfig
 from cortex_claude.server.tools.facts import handle_facts
+from cortex_claude.server.tools.forget import handle_forget
 from cortex_claude.server.tools.recall import handle_recall
 from cortex_claude.server.tools.save import handle_save
+from cortex_claude.server.tools.scopes import handle_scopes
+from cortex_claude.server.tools.status import handle_status
 
 mcp = FastMCP("cortex-claude")
 engine: CortexEngine | None = None
@@ -80,3 +83,42 @@ async def cortex_facts(
     Extremely token-efficient (~5-15 tokens per fact).
     """
     return await handle_facts(_get_engine(), topic, _cwd(), relation, scope, limit)
+
+
+@mcp.tool()
+async def cortex_forget(
+    query: str | None = None,
+    memory_id: str | None = None,
+    scope: str | None = None,
+    dry_run: bool = True,
+) -> str:
+    """Remove memories from storage.
+
+    By default runs in dry_run mode (preview only).
+    Set dry_run=false to actually delete.
+    """
+    return await handle_forget(_get_engine(), _cwd(), query, memory_id, scope, dry_run)
+
+
+@mcp.tool()
+async def cortex_scopes(
+    action: Literal["list", "create", "delete", "link", "unlink", "info"],
+    name: str | None = None,
+    path: str | None = None,
+) -> str:
+    """Manage memory scopes.
+
+    Actions: list, create, delete, link (directory to scope), unlink, info.
+    """
+    return await handle_scopes(_get_engine(), action, _cwd(), name, path)
+
+
+@mcp.tool()
+async def cortex_status(
+    scope: str | None = None,
+) -> str:
+    """Show Cortex memory statistics.
+
+    Returns total memories, facts, scopes, storage size.
+    """
+    return await handle_status(_get_engine(), _cwd(), scope)

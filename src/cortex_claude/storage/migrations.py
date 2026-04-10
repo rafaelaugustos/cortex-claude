@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -51,15 +51,67 @@ CREATE VIRTUAL TABLE IF NOT EXISTS memory_vectors USING vec0(
 );
 """
 
+FTS_SQL = """
+CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+    content,
+    summary,
+    tags,
+    content='memories',
+    content_rowid='rowid'
+);
+
+CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
+    INSERT INTO memories_fts(rowid, content, summary, tags)
+    VALUES (new.rowid, new.content, new.summary, new.tags);
+END;
+
+CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
+    INSERT INTO memories_fts(memories_fts, rowid, content, summary, tags)
+    VALUES ('delete', old.rowid, old.content, old.summary, old.tags);
+END;
+
+CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
+    INSERT INTO memories_fts(memories_fts, rowid, content, summary, tags)
+    VALUES ('delete', old.rowid, old.content, old.summary, old.tags);
+    INSERT INTO memories_fts(rowid, content, summary, tags)
+    VALUES (new.rowid, new.content, new.summary, new.tags);
+END;
+"""
+
 
 def initialize_schema(conn: sqlite3.Connection) -> None:
     cursor = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version'"
     )
-    if cursor.fetchone() is not None:
+    row = cursor.fetchone()
+
+    if row is not None:
+        version = conn.execute("SELECT version FROM schema_version").fetchone()
+        current = version[0] if version else 0
+        if current < 2:
+            _migrate_to_v2(conn)
         return
 
     conn.executescript(SCHEMA_SQL)
     conn.execute(VECTOR_TABLE_SQL)
+    conn.executescript(FTS_SQL)
     conn.execute("INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,))
+    conn.commit()
+
+
+def _migrate_to_v2(conn: sqlite3.Connection) -> None:
+    fts_exists = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='memories_fts'"
+    ).fetchone()
+
+    if not fts_exists:
+        conn.executescript(FTS_SQL)
+        conn.execute(
+            """
+            INSERT INTO memories_fts(rowid, content, summary, tags)
+            SELECT rowid, content, summary, tags FROM memories
+            """
+        )
+
+    conn.execute("UPDATE schema_version SET version = ?", (SCHEMA_VERSION,))
     conn.commit()

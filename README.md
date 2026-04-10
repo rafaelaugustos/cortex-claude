@@ -70,6 +70,12 @@ In any Claude Code session:
 
 "What facts do you have about the API?"
 → cortex_facts returns structured knowledge graph triplets
+
+"Forget what I said about the old API key"
+→ cortex_forget removes matching memories (with preview first)
+
+"Show me the memory status"
+→ cortex_status shows totals, scopes, storage size
 ```
 
 ## Tools
@@ -79,6 +85,9 @@ In any Claude Code session:
 | `cortex_save` | Store memory with auto fact extraction, summarization, and embedding | N/A |
 | `cortex_recall` | Progressive retrieval: facts → summaries → full content | Controlled via `max_tokens` budget |
 | `cortex_facts` | Direct knowledge graph query, returns structured triplets | ~5-15 tokens per fact |
+| `cortex_forget` | Delete memories by query or ID. Dry-run by default (preview before deleting) | N/A |
+| `cortex_scopes` | Manage scopes: list, create, delete, link/unlink directories | N/A |
+| `cortex_status` | Dashboard: memory count, fact count, storage size per scope | N/A |
 
 ### cortex_recall depth modes
 
@@ -106,7 +115,11 @@ Recall (progressive):
 
 **Deduplication** detects near-identical memories (cosine similarity > 0.92) and merges them.
 
-**Scopes** isolate memories per project. Configure in `~/.cortex-claude/config.json`:
+**Decay** — memories that aren't accessed lose relevance over time. Frequently accessed memories get a boost. Keeps results fresh and relevant.
+
+**Full-text search** (FTS5) — keyword search alongside semantic search, automatically synced via SQLite triggers.
+
+**Scopes** isolate memories per project. Manage via `cortex_scopes` tool or configure in `~/.cortex-claude/config.json`:
 
 ```json
 {

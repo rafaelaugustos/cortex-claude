@@ -97,6 +97,46 @@ class MemoryRepository:
         conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
         conn.commit()
 
+    def search_fts(
+        self,
+        conn: sqlite3.Connection,
+        query: str,
+        limit: int = 10,
+    ) -> list[str]:
+        try:
+            rows = conn.execute(
+                """
+                SELECT m.id
+                FROM memories_fts f
+                JOIN memories m ON m.rowid = f.rowid
+                WHERE memories_fts MATCH ?
+                ORDER BY rank
+                LIMIT ?
+                """,
+                (query, limit),
+            ).fetchall()
+            return [row[0] for row in rows]
+        except Exception:
+            return []
+
+    def search_by_query(
+        self,
+        conn: sqlite3.Connection,
+        query: str,
+        limit: int = 10,
+    ) -> list[Memory]:
+        ids = self.search_fts(conn, query, limit)
+        memories = []
+        for mid in ids:
+            m = self.get(conn, mid)
+            if m:
+                memories.append(m)
+        return memories
+
     def count(self, conn: sqlite3.Connection) -> int:
         row = conn.execute("SELECT COUNT(*) FROM memories").fetchone()
         return row[0]
+
+    def get_all_ids(self, conn: sqlite3.Connection) -> list[str]:
+        rows = conn.execute("SELECT id FROM memories").fetchall()
+        return [row[0] for row in rows]
