@@ -78,7 +78,7 @@ class MemoryRepository:
             (embedding_blob, limit),
         ).fetchall()
 
-        return [(row[0], 1.0 - row[1]) for row in rows]
+        return [(row[0], 1.0 - (row[1] ** 2) / 2.0) for row in rows]
 
     def update_accessed(self, conn: sqlite3.Connection, memory_id: str) -> None:
         now = int(time.time() * 1000)
