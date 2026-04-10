@@ -1,10 +1,9 @@
-import asyncio
-
-from cortex_claude.server.app import run
+from cortex_claude.server.app import mcp, _init_engine
 
 
 def main() -> None:
-    asyncio.run(run())
+    _init_engine()
+    mcp.run(transport="stdio")
 
 
 if __name__ == "__main__":

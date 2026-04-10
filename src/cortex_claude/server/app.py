@@ -3,28 +3,37 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from mcp.server import Server
-from mcp.server.stdio import stdio_server
+from mcp.server.fastmcp import FastMCP
 
 from cortex_claude.core.engine import CortexEngine
 from cortex_claude.server.config import CortexConfig
 from cortex_claude.server.tools.recall import handle_recall
 from cortex_claude.server.tools.save import handle_save
 
-server = Server("cortex-claude")
+mcp = FastMCP("cortex-claude")
 engine: CortexEngine | None = None
 
 
 def _get_engine() -> CortexEngine:
-    assert engine is not None, "Engine not initialized"
+    if engine is None:
+        _init_engine()
     return engine
+
+
+def _init_engine() -> None:
+    global engine
+    base_path = Path(
+        os.environ.get("CORTEX_HOME", str(Path.home() / ".cortex-claude"))
+    ).expanduser()
+    config = CortexConfig.load(base_path)
+    engine = CortexEngine(base_path=config.base_path)
 
 
 def _cwd() -> str:
     return os.getcwd()
 
 
-@server.tool()
+@mcp.tool()
 async def cortex_save(
     content: str,
     tags: list[str] | None = None,
@@ -38,7 +47,7 @@ async def cortex_save(
     return await handle_save(_get_engine(), content, _cwd(), tags, scope)
 
 
-@server.tool()
+@mcp.tool()
 async def cortex_recall(
     query: str,
     max_tokens: int = 200,
@@ -52,19 +61,3 @@ async def cortex_recall(
     return await handle_recall(_get_engine(), query, _cwd(), max_tokens, scope)
 
 
-async def run() -> None:
-    global engine
-
-    base_path = Path(
-        os.environ.get("CORTEX_HOME", str(Path.home() / ".cortex-claude"))
-    ).expanduser()
-
-    config = CortexConfig.load(base_path)
-    engine = CortexEngine(base_path=config.base_path)
-
-    async with stdio_server() as (read_stream, write_stream):
-        await server.run(
-            read_stream,
-            write_stream,
-            server.create_initialization_options(),
-        )
