@@ -11,6 +11,9 @@ _models: dict[str, spacy.Language] = {}
 LANG_MODELS = {
     "en": "en_core_web_sm",
     "pt": "pt_core_news_sm",
+    "es": "es_core_news_sm",
+    "de": "de_core_news_sm",
+    "fr": "fr_core_news_sm",
 }
 
 
@@ -20,19 +23,30 @@ def _get_nlp(lang: str = "en") -> spacy.Language:
         try:
             _models[lang] = spacy.load(model_name)
         except OSError:
-            _models[lang] = spacy.load(LANG_MODELS["en"])
+            if lang != "en":
+                _models[lang] = _get_nlp("en")
+            else:
+                raise
     return _models[lang]
 
 
 def _detect_lang(text: str) -> str:
-    pt_markers = [
-        " usa ", " com ", " para ", " tem ", " via ", " como ",
-        " não ", " pelo ", " pela ", " dos ", " das ", " que ",
-        " são ", " está ", " uma ", " um ",
-    ]
+    markers = {
+        "pt": [" usa ", " com ", " para ", " tem ", " via ", " como ",
+               " não ", " pelo ", " pela ", " dos ", " das ", " que "],
+        "es": [" con ", " para ", " tiene ", " por ", " del ", " las ",
+               " los ", " una ", " está ", " como ", " pero "],
+        "de": [" und ", " der ", " die ", " das ", " ist ", " ein ",
+               " eine ", " für ", " mit ", " auf ", " nicht "],
+        "fr": [" les ", " des ", " une ", " est ", " pour ", " dans ",
+               " avec ", " pas ", " sur ", " qui ", " cette "],
+    }
     text_lower = f" {text.lower()} "
-    pt_count = sum(1 for m in pt_markers if m in text_lower)
-    return "pt" if pt_count >= 2 else "en"
+    scores = {}
+    for lang, words in markers.items():
+        scores[lang] = sum(1 for m in words if m in text_lower)
+    best = max(scores, key=scores.get)
+    return best if scores[best] >= 2 else "en"
 
 
 def _get_compound_span(token: Token) -> str:

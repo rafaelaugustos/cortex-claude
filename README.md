@@ -23,13 +23,30 @@ auth service → use → hour expiry
 ### Key Features
 
 - **Progressive recall** — 3 layers (facts → summaries → full content), stops at the cheapest sufficient layer
-- **Knowledge graph** — auto-extracts structured facts via spaCy NLP, not just raw text
-- **Token efficient** — 70-90% fewer tokens vs. traditional memory solutions
+- **Knowledge graph** — auto-extracts structured facts via spaCy NLP with multi-hop traversal
+- **Token efficient** — 66%+ fewer tokens vs. full content retrieval (benchmarked)
 - **Local-first** — SQLite + local embeddings + local NLP. Zero API calls, zero network, zero cost
+- **Graph traversal** — navigate entity connections across multiple hops (A → B → C)
+- **Entity normalization** — "postgres", "PostgreSQL", "pg" all resolve to the same entity
 - **Configurable scopes** — global, per-project, or custom memory boundaries
 - **Deduplication** — detects and merges near-identical memories automatically
-- **Multi-language** — fact extraction works in English and Portuguese (auto-detected)
+- **Decay system** — unused memories lose relevance over time, keeping results fresh
+- **Multi-language** — fact extraction and summarization in EN, PT (auto-detected). ES, DE, FR supported with spaCy models
+- **Full-text search** — FTS5 keyword search alongside semantic vector search
+- **Fully configurable** — all thresholds, ratios, and behaviors customizable via config.json
 - **On-demand** — Claude calls memory tools only when needed, nothing auto-injected
+
+### Benchmarks
+
+With 10 stored memories (244 total tokens):
+
+| Depth | Tokens returned | Reduction | Latency |
+|-------|----------------|-----------|---------|
+| `facts` | 82 | **66%** | ~10ms |
+| `auto` | 82 | **66%** | ~10ms |
+| `full` | 244 | 0% | ~12ms |
+
+Facts query: **0.1ms**. Graph traversal: **0.2ms**. Save: **~30ms** (after model load).
 
 ## Quick Start
 
@@ -71,6 +88,9 @@ In any Claude Code session:
 "What facts do you have about the API?"
 → cortex_facts returns structured knowledge graph triplets
 
+"What's connected to the auth service?"
+→ cortex_traverse follows graph connections across hops
+
 "Forget what I said about the old API key"
 → cortex_forget removes matching memories (with preview first)
 
@@ -85,6 +105,7 @@ In any Claude Code session:
 | `cortex_save` | Store memory with auto fact extraction, summarization, and embedding | N/A |
 | `cortex_recall` | Progressive retrieval: facts → summaries → full content | Controlled via `max_tokens` budget |
 | `cortex_facts` | Direct knowledge graph query, returns structured triplets | ~5-15 tokens per fact |
+| `cortex_traverse` | Navigate the knowledge graph across multiple hops | ~5-15 tokens per connection |
 | `cortex_forget` | Delete memories by query or ID. Dry-run by default (preview before deleting) | N/A |
 | `cortex_scopes` | Manage scopes: list, create, delete, link/unlink directories | N/A |
 | `cortex_status` | Dashboard: memory count, fact count, storage size per scope | N/A |
@@ -109,28 +130,66 @@ Recall (progressive):
   3. Full chunks     (original content)    → return
 ```
 
-**Fact extraction** uses spaCy dependency parsing and NER to produce subject-relation-object triplets. Runs locally, costs zero tokens.
+**Fact extraction** uses spaCy dependency parsing and NER to produce subject-relation-object triplets. Runs locally, costs zero tokens. Entities are normalized and deduplicated ("postgres" → "postgresql").
 
-**Summarization** uses extractive summarization (sentence scoring via TF-IDF + entity density + position). No LLM calls.
+**Graph traversal** navigates entity connections across multiple hops. Query "auth" and discover: auth → JWT → express-jwt → middleware.
 
-**Deduplication** detects near-identical memories (cosine similarity > 0.92) and merges them.
+**Summarization** uses extractive summarization (sentence scoring via TF-IDF + entity density + position). No LLM calls. Multi-language aware (EN/PT).
 
-**Decay** — memories that aren't accessed lose relevance over time. Frequently accessed memories get a boost. Keeps results fresh and relevant.
+**Deduplication** detects near-identical memories (cosine similarity threshold, configurable) and merges them.
 
-**Full-text search** (FTS5) — keyword search alongside semantic search, automatically synced via SQLite triggers.
+**Decay** — memories that aren't accessed lose relevance over time (`score = e^(-λ * days) * (1 + log(access_count))`). Recalculated on server startup. Affects ranking in all recall layers.
 
-**Scopes** isolate memories per project. Manage via `cortex_scopes` tool or configure in `~/.cortex-claude/config.json`:
+**Hybrid search** — combines vector similarity (semantic) + FTS5 (keyword exact match) for best recall. FTS5 synced automatically via SQLite triggers.
+
+**Scopes** isolate memories per project. Manage via `cortex_scopes` tool or configure in `~/.cortex-claude/config.json`.
+
+## Configuration
+
+All behavior is customizable via `~/.cortex-claude/config.json`:
 
 ```json
 {
+  "recall": {
+    "default_max_tokens": 200,
+    "default_depth": "auto",
+    "sufficiency": {
+      "coverage_threshold": 0.7,
+      "confidence_threshold": 0.6
+    }
+  },
+  "embeddings": {
+    "model": "all-MiniLM-L6-v2",
+    "batch_size": 32
+  },
+  "facts": {
+    "extraction_method": "local",
+    "min_confidence": 0.5
+  },
+  "decay": {
+    "lambda": 0.05,
+    "recalculate_interval_hours": 6,
+    "min_score": 0.01
+  },
+  "deduplication": {
+    "similarity_threshold": 0.92,
+    "merge_strategy": "append"
+  },
   "scopes": {
     "mappings": {
       "/path/to/project-a": "project:a",
       "/path/to/project-b": "project:b"
-    }
+    },
+    "default": "global",
+    "search_order": "project_first"
+  },
+  "storage": {
+    "max_db_size_mb": 500
   }
 }
 ```
+
+All fields are optional. Defaults are used for anything not specified.
 
 ## Development
 
@@ -147,6 +206,12 @@ Run the demo:
 
 ```bash
 uv run python scripts/demo.py
+```
+
+Run benchmarks:
+
+```bash
+uv run python scripts/benchmark.py
 ```
 
 ## Architecture

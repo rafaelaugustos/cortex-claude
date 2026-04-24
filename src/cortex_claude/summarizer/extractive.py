@@ -5,18 +5,38 @@ import spacy
 from cortex_claude.embeddings.tokenizer import count_tokens
 from cortex_claude.summarizer.scoring import entity_density_score, position_score, tfidf_scores
 
-_nlp: spacy.Language | None = None
+_models: dict[str, spacy.Language] = {}
+
+LANG_MODELS = {
+    "en": "en_core_web_sm",
+    "pt": "pt_core_news_sm",
+}
 
 
-def _get_nlp() -> spacy.Language:
-    global _nlp
-    if _nlp is None:
-        _nlp = spacy.load("en_core_web_sm")
-    return _nlp
+def _detect_lang(text: str) -> str:
+    pt_markers = [
+        " usa ", " com ", " para ", " tem ", " via ", " como ",
+        " não ", " pelo ", " pela ", " dos ", " das ", " que ",
+        " são ", " está ", " uma ", " um ",
+    ]
+    text_lower = f" {text.lower()} "
+    pt_count = sum(1 for m in pt_markers if m in text_lower)
+    return "pt" if pt_count >= 2 else "en"
+
+
+def _get_nlp(lang: str = "en") -> spacy.Language:
+    if lang not in _models:
+        model_name = LANG_MODELS.get(lang, LANG_MODELS["en"])
+        try:
+            _models[lang] = spacy.load(model_name)
+        except OSError:
+            _models[lang] = spacy.load(LANG_MODELS["en"])
+    return _models[lang]
 
 
 def summarize(content: str, target_ratio: float = 0.25) -> str:
-    nlp = _get_nlp()
+    lang = _detect_lang(content)
+    nlp = _get_nlp(lang)
     doc = nlp(content)
     sentences = list(doc.sents)
 

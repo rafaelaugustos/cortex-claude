@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import os
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -12,11 +12,9 @@ from cortex_claude.embeddings import EmbeddingEngine, count_tokens
 from cortex_claude.facts import extract_facts
 from cortex_claude.models.fact import Fact
 from cortex_claude.models.memory import Memory, RecallItem, RecallResult, SaveResult
-from cortex_claude.models.scope import ScopeInfo
+from cortex_claude.server.config import CortexConfig
 from cortex_claude.storage import FactRepository, MemoryRepository, StorageManager
 from cortex_claude.summarizer import summarize
-
-DEDUP_THRESHOLD = 0.92
 
 
 @dataclass
@@ -35,13 +33,23 @@ class StatusResult:
 
 
 class CortexEngine:
-    def __init__(self, base_path: Path | None = None):
-        self._base_path = base_path or Path.home() / ".cortex-claude"
+    def __init__(self, base_path: Path | None = None, config: CortexConfig | None = None):
+        self._config = config or CortexConfig.load(base_path)
+        self._base_path = self._config.base_path
         self._storage = StorageManager(self._base_path)
-        self._embeddings = EmbeddingEngine()
+        self._embeddings = EmbeddingEngine(model_name=self._config.embedding_model)
         self._scope_manager = ScopeManager(self._base_path)
         self._memory_repo = MemoryRepository()
         self._fact_repo = FactRepository()
+
+    def initialize(self) -> None:
+        for scope in self._storage.list_scopes():
+            conn = self._storage.get_database(scope)
+            recalculate_decay_scores(
+                conn,
+                decay_lambda=self._config.decay_lambda,
+                min_score=self._config.decay_min_score,
+            )
 
     async def save(
         self,
@@ -57,10 +65,11 @@ class CortexEngine:
         tokens = count_tokens(content)
 
         existing = self._memory_repo.search_by_vector(conn, embedding, limit=1)
-        if existing and existing[0][1] >= DEDUP_THRESHOLD:
+        if existing and existing[0][1] >= self._config.dedup_similarity_threshold:
             existing_memory = self._memory_repo.get(conn, existing[0][0])
             if existing_memory:
                 merged = f"{existing_memory.content}\n\n{content}"
+                self._fact_repo.delete_by_memory(conn, existing_memory.id)
                 self._memory_repo.delete(conn, existing_memory.id)
                 content = merged
                 embedding = self._embeddings.embed(content)
@@ -77,7 +86,7 @@ class CortexEngine:
 
         self._memory_repo.save(conn, memory, embedding)
 
-        facts = extract_facts(content)
+        facts = extract_facts(content, min_confidence=self._config.fact_min_confidence)
         for fact in facts:
             fact.source_memory_id = memory.id
             fact.scope = write_scope
@@ -143,6 +152,49 @@ class CortexEngine:
         all_facts.sort(key=lambda f: f.confidence, reverse=True)
         return all_facts[:limit]
 
+    async def traverse_graph(
+        self,
+        start: str,
+        max_hops: int = 2,
+        scope: str | None = None,
+        cwd: str = ".",
+    ) -> list[Fact]:
+        scopes = [scope] if scope else self._scope_manager.resolve(cwd)
+        visited: set[str] = set()
+        result: list[Fact] = []
+        frontier: list[str] = [start.lower()]
+
+        for _ in range(max_hops):
+            next_frontier: list[str] = []
+            for entity in frontier:
+                if entity in visited:
+                    continue
+                visited.add(entity)
+
+                for s in scopes:
+                    conn = self._storage.get_database(s)
+                    facts = self._fact_repo.search(conn, entity, limit=20)
+                    for fact in facts:
+                        result.append(fact)
+                        if fact.subject.lower() not in visited:
+                            next_frontier.append(fact.subject.lower())
+                        if fact.object.lower() not in visited:
+                            next_frontier.append(fact.object.lower())
+
+            frontier = next_frontier
+            if not frontier:
+                break
+
+        seen: set[str] = set()
+        unique: list[Fact] = []
+        for f in result:
+            key = f"{f.subject}|{f.relation}|{f.object}"
+            if key not in seen:
+                seen.add(key)
+                unique.append(f)
+
+        return unique
+
     def _recall_facts(
         self,
         scopes: list[str],
@@ -156,9 +208,12 @@ class CortexEngine:
         for s in scopes:
             conn = self._storage.get_database(s)
 
-            # Find relevant memories via vector search, then get their facts
+            # Vector search → find relevant memories → get their facts
             vector_results = self._memory_repo.search_by_vector(conn, query_embedding, limit=5)
-            for memory_id, score in vector_results:
+            for memory_id, vec_score in vector_results:
+                memory = self._memory_repo.get(conn, memory_id)
+                decay = memory.decay_score if memory else 1.0
+
                 memory_facts = self._fact_repo.search_by_memory(conn, memory_id)
                 for fact in memory_facts:
                     fact_key = f"{fact.subject}|{fact.relation}|{fact.object}"
@@ -173,12 +228,37 @@ class CortexEngine:
                     items.append(RecallItem(
                         memory_id=fact.source_memory_id,
                         content=text,
-                        score=score + fact.confidence,
+                        score=(vec_score + fact.confidence) * decay,
                         scope=fact.scope,
                         created_at=fact.created_at,
                     ))
 
-            # Also search facts by keyword
+            # FTS keyword search → find additional facts
+            fts_ids = self._memory_repo.search_fts(conn, query, limit=5)
+            for memory_id in fts_ids:
+                memory = self._memory_repo.get(conn, memory_id)
+                decay = memory.decay_score if memory else 1.0
+
+                memory_facts = self._fact_repo.search_by_memory(conn, memory_id)
+                for fact in memory_facts:
+                    fact_key = f"{fact.subject}|{fact.relation}|{fact.object}"
+                    if fact_key in seen_facts:
+                        continue
+                    seen_facts.add(fact_key)
+
+                    text = f"{fact.subject} → {fact.relation} → {fact.object}"
+                    tokens = count_tokens(text)
+                    if not budget.consume(tokens):
+                        return items
+                    items.append(RecallItem(
+                        memory_id=fact.source_memory_id,
+                        content=text,
+                        score=fact.confidence * decay,
+                        scope=fact.scope,
+                        created_at=fact.created_at,
+                    ))
+
+            # Keyword search on fact table directly
             for word in query.lower().split():
                 if len(word) < 3:
                     continue
@@ -215,9 +295,17 @@ class CortexEngine:
         seen_ids: set[str] = set()
         for s in scopes:
             conn = self._storage.get_database(s)
-            results = self._memory_repo.search_by_vector(conn, query_embedding, limit=10)
 
-            for memory_id, score in results:
+            candidates = self._memory_repo.search_by_vector(conn, query_embedding, limit=10)
+
+            # Merge with FTS results
+            fts_ids = self._memory_repo.search_fts(conn, query, limit=5)
+            fts_set = set(fts_ids)
+            for fts_id in fts_ids:
+                if not any(fts_id == c[0] for c in candidates):
+                    candidates.append((fts_id, 0.5))
+
+            for memory_id, score in candidates:
                 if memory_id in seen_ids:
                     continue
                 seen_ids.add(memory_id)
@@ -225,6 +313,10 @@ class CortexEngine:
                 memory = self._memory_repo.get(conn, memory_id)
                 if not memory or not memory.summary:
                     continue
+
+                adjusted_score = score * memory.decay_score
+                if memory_id in fts_set:
+                    adjusted_score += 0.2
 
                 tokens = count_tokens(memory.summary)
                 if not budget.consume(tokens):
@@ -234,7 +326,7 @@ class CortexEngine:
                 items.append(RecallItem(
                     memory_id=memory.id,
                     content=memory.summary,
-                    score=score,
+                    score=adjusted_score,
                     scope=memory.scope,
                     tags=memory.tags,
                     created_at=memory.created_at,
@@ -254,9 +346,17 @@ class CortexEngine:
         seen_ids: set[str] = set()
         for s in scopes:
             conn = self._storage.get_database(s)
-            results = self._memory_repo.search_by_vector(conn, query_embedding, limit=10)
 
-            for memory_id, score in results:
+            candidates = self._memory_repo.search_by_vector(conn, query_embedding, limit=10)
+
+            # Merge with FTS results
+            fts_ids = self._memory_repo.search_fts(conn, query, limit=5)
+            fts_set = set(fts_ids)
+            for fts_id in fts_ids:
+                if not any(fts_id == c[0] for c in candidates):
+                    candidates.append((fts_id, 0.5))
+
+            for memory_id, score in candidates:
                 if memory_id in seen_ids:
                     continue
                 seen_ids.add(memory_id)
@@ -264,6 +364,10 @@ class CortexEngine:
                 memory = self._memory_repo.get(conn, memory_id)
                 if not memory:
                     continue
+
+                adjusted_score = score * memory.decay_score
+                if memory_id in fts_set:
+                    adjusted_score += 0.2
 
                 tokens = count_tokens(memory.content)
                 if not budget.consume(tokens):
@@ -273,7 +377,7 @@ class CortexEngine:
                 items.append(RecallItem(
                     memory_id=memory.id,
                     content=memory.content,
-                    score=score,
+                    score=adjusted_score,
                     scope=memory.scope,
                     tags=memory.tags,
                     created_at=memory.created_at,
@@ -287,7 +391,10 @@ class CortexEngine:
         if budget.used_tokens >= budget.max_tokens * 0.6:
             return True
         avg_score = sum(i.score for i in items) / len(items)
-        return len(items) >= 3 and avg_score > 0.7
+        return (
+            len(items) >= 3
+            and avg_score > self._config.sufficiency_confidence_threshold
+        )
 
     def _build_result(
         self,
@@ -381,7 +488,6 @@ class CortexEngine:
 
         elif action == "link" and name and path:
             config_path = self._base_path / "config.json"
-            import json
             config = {}
             if config_path.exists():
                 with open(config_path) as f:
@@ -394,17 +500,16 @@ class CortexEngine:
 
         elif action == "unlink" and path:
             config_path = self._base_path / "config.json"
-            import json
             config = {}
             if config_path.exists():
                 with open(config_path) as f:
                     config = json.load(f)
             mappings = config.get("scopes", {}).get("mappings", {})
-            removed = mappings.pop(path, None)
+            mappings.pop(path, None)
             with open(config_path, "w") as f:
                 json.dump(config, f, indent=2)
             self._scope_manager.reload()
-            return {"action": "unlink", "path": path, "removed": removed, "status": "unlinked"}
+            return {"action": "unlink", "path": path, "status": "unlinked"}
 
         elif action == "info" and name:
             conn = self._storage.get_database(name)
@@ -458,7 +563,11 @@ class CortexEngine:
         total = 0
         for s in scopes:
             conn = self._storage.get_database(s)
-            total += recalculate_decay_scores(conn)
+            total += recalculate_decay_scores(
+                conn,
+                decay_lambda=self._config.decay_lambda,
+                min_score=self._config.decay_min_score,
+            )
         return total
 
     def close(self) -> None:

@@ -5,6 +5,21 @@ description = "Local-first, token-efficient memory system for Claude Code via MC
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"
+authors = [
+    { name = "Rafael Augusto" },
+]
+keywords = ["claude", "mcp", "memory", "knowledge-graph", "embeddings", "nlp"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries",
+]
 dependencies = [
     "mcp>=1.0.0",
     "sentence-transformers>=3.0.0",
@@ -22,6 +37,11 @@ dev = [
     "pytest-asyncio>=0.24.0",
     "pyright>=1.1.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/rafaelaugusto/cortex-claude"
+Repository = "https://github.com/rafaelaugusto/cortex-claude"
+Issues = "https://github.com/rafaelaugusto/cortex-claude/issues"
 
 [project.scripts]
 cortex-claude = "cortex_claude.__main__:main"

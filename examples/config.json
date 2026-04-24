@@ -1,0 +1,38 @@
+{
+  "storage": {
+    "max_db_size_mb": 500
+  },
+  "scopes": {
+    "mappings": {
+      "/home/user/projects/api": "project:api",
+      "/home/user/projects/web": "project:web"
+    },
+    "default": "global",
+    "search_order": "project_first"
+  },
+  "recall": {
+    "default_max_tokens": 200,
+    "default_depth": "auto",
+    "sufficiency": {
+      "coverage_threshold": 0.7,
+      "confidence_threshold": 0.6
+    }
+  },
+  "embeddings": {
+    "model": "all-MiniLM-L6-v2",
+    "batch_size": 32
+  },
+  "facts": {
+    "extraction_method": "local",
+    "min_confidence": 0.5
+  },
+  "decay": {
+    "lambda": 0.05,
+    "recalculate_interval_hours": 6,
+    "min_score": 0.01
+  },
+  "deduplication": {
+    "similarity_threshold": 0.92,
+    "merge_strategy": "append"
+  }
+}

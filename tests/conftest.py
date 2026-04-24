@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from cortex_claude.core.engine import CortexEngine
+from cortex_claude.server.config import CortexConfig
 from cortex_claude.storage.database import StorageManager
 
 
@@ -24,6 +25,7 @@ def storage_manager(tmp_cortex_home: Path) -> StorageManager:
 
 @pytest.fixture
 def engine(tmp_cortex_home: Path) -> CortexEngine:
-    eng = CortexEngine(base_path=tmp_cortex_home)
+    config = CortexConfig(base_path=tmp_cortex_home)
+    eng = CortexEngine(config=config)
     yield eng
     eng.close()

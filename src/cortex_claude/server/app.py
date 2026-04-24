@@ -14,6 +14,7 @@ from cortex_claude.server.tools.recall import handle_recall
 from cortex_claude.server.tools.save import handle_save
 from cortex_claude.server.tools.scopes import handle_scopes
 from cortex_claude.server.tools.status import handle_status
+from cortex_claude.server.tools.traverse import handle_traverse
 
 mcp = FastMCP("cortex-claude")
 engine: CortexEngine | None = None
@@ -31,7 +32,8 @@ def _init_engine() -> None:
         os.environ.get("CORTEX_HOME", str(Path.home() / ".cortex-claude"))
     ).expanduser()
     config = CortexConfig.load(base_path)
-    engine = CortexEngine(base_path=config.base_path)
+    engine = CortexEngine(config=config)
+    engine.initialize()
 
 
 def _cwd() -> str:
@@ -83,6 +85,20 @@ async def cortex_facts(
     Extremely token-efficient (~5-15 tokens per fact).
     """
     return await handle_facts(_get_engine(), topic, _cwd(), relation, scope, limit)
+
+
+@mcp.tool()
+async def cortex_traverse(
+    start: str,
+    max_hops: int = 2,
+    scope: str | None = None,
+) -> str:
+    """Traverse the knowledge graph from an entity.
+
+    Follows connections through multiple hops to discover related information.
+    Example: 'auth' → 'JWT' → 'express-jwt' (2 hops).
+    """
+    return await handle_traverse(_get_engine(), start, _cwd(), max_hops, scope)
 
 
 @mcp.tool()

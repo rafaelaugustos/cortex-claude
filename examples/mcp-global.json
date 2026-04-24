@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "cortex": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["cortex-claude"],
+      "env": {
+        "CORTEX_HOME": "~/.cortex-claude"
+      }
+    }
+  }
+}
