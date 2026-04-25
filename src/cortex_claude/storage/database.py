@@ -9,8 +9,9 @@ from cortex_claude.storage.migrations import initialize_schema
 
 
 class StorageManager:
-    def __init__(self, base_path: Path | None = None):
+    def __init__(self, base_path: Path | None = None, embedding_dim: int = 384):
         self._base_path = base_path or Path.home() / ".cortex-claude"
+        self._embedding_dim = embedding_dim
         self._connections: dict[str, sqlite3.Connection] = {}
         self._base_path.mkdir(parents=True, exist_ok=True)
         (self._base_path / "scopes").mkdir(exist_ok=True)
@@ -39,7 +40,7 @@ class StorageManager:
         sqlite_vec.load(conn)
         conn.enable_load_extension(False)
 
-        initialize_schema(conn)
+        initialize_schema(conn, embedding_dim=self._embedding_dim)
 
         self._connections[scope] = conn
         return conn

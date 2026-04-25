@@ -37,8 +37,8 @@ class CortexEngine:
     def __init__(self, base_path: Path | None = None, config: CortexConfig | None = None):
         self._config = config or CortexConfig.load(base_path)
         self._base_path = self._config.base_path
-        self._storage = StorageManager(self._base_path)
         self._embeddings = EmbeddingEngine(model_name=self._config.embedding_model)
+        self._storage = StorageManager(self._base_path, embedding_dim=self._embeddings.dim)
         self._scope_manager = ScopeManager(self._base_path)
         self._memory_repo = MemoryRepository()
         self._fact_repo = FactRepository()
@@ -51,6 +51,7 @@ class CortexEngine:
                 decay_lambda=self._config.decay_lambda,
                 min_score=self._config.decay_min_score,
             )
+            self._fact_repo.consolidate(conn)
 
     async def save(
         self,

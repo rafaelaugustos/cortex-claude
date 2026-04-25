@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -42,12 +42,10 @@ CREATE INDEX IF NOT EXISTS idx_facts_subject ON facts(subject);
 CREATE INDEX IF NOT EXISTS idx_facts_object ON facts(object);
 CREATE INDEX IF NOT EXISTS idx_facts_relation ON facts(relation);
 CREATE INDEX IF NOT EXISTS idx_facts_subject_relation ON facts(subject, relation);
-"""
 
-VECTOR_TABLE_SQL = """
-CREATE VIRTUAL TABLE IF NOT EXISTS memory_vectors USING vec0(
-    id TEXT PRIMARY KEY,
-    embedding float[384]
+CREATE TABLE IF NOT EXISTS meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
 );
 """
 
@@ -79,7 +77,16 @@ END;
 """
 
 
-def initialize_schema(conn: sqlite3.Connection) -> None:
+def _vector_table_sql(dim: int) -> str:
+    return f"""
+CREATE VIRTUAL TABLE IF NOT EXISTS memory_vectors USING vec0(
+    id TEXT PRIMARY KEY,
+    embedding float[{dim}]
+);
+"""
+
+
+def initialize_schema(conn: sqlite3.Connection, embedding_dim: int = 384) -> None:
     cursor = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version'"
     )
@@ -90,11 +97,17 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
         current = version[0] if version else 0
         if current < 2:
             _migrate_to_v2(conn)
+        if current < 3:
+            _migrate_to_v3(conn, embedding_dim)
         return
 
     conn.executescript(SCHEMA_SQL)
-    conn.execute(VECTOR_TABLE_SQL)
+    conn.execute(_vector_table_sql(embedding_dim))
     conn.executescript(FTS_SQL)
+    conn.execute(
+        "INSERT OR REPLACE INTO meta (key, value) VALUES ('embedding_dim', ?)",
+        (str(embedding_dim),),
+    )
     conn.execute("INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,))
     conn.commit()
 
@@ -113,5 +126,21 @@ def _migrate_to_v2(conn: sqlite3.Connection) -> None:
             """
         )
 
-    conn.execute("UPDATE schema_version SET version = ?", (SCHEMA_VERSION,))
+    conn.execute("UPDATE schema_version SET version = 2")
+    conn.commit()
+
+
+def _migrate_to_v3(conn: sqlite3.Connection, embedding_dim: int) -> None:
+    meta_exists = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='meta'"
+    ).fetchone()
+
+    if not meta_exists:
+        conn.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+
+    conn.execute(
+        "INSERT OR REPLACE INTO meta (key, value) VALUES ('embedding_dim', ?)",
+        (str(embedding_dim),),
+    )
+    conn.execute("UPDATE schema_version SET version = 3")
     conn.commit()

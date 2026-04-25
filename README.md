@@ -78,11 +78,13 @@ The system stops at the cheapest layer that answers the question. **66% fewer to
 - **Hybrid search** &mdash; vector similarity + FTS5 keyword search combined
 - **Configurable scopes** &mdash; global, per-project, or custom memory boundaries
 - **Deduplication** &mdash; detects and merges near-identical memories automatically
+- **Fact merging** &mdash; when multiple memories mention the same fact, it's consolidated into one with boosted confidence
 - **Decay system** &mdash; unused memories lose relevance over time, keeping results fresh
 - **Auto-capture** &mdash; hooks automatically save tool results (Bash, Read, Grep, Edit, Write) to memory
 - **Session context injection** &mdash; injects memory stats and known facts at session start
 - **Background daemon** &mdash; pre-loaded model for instant saves via Unix socket (~0.3s vs ~5s cold start)
 - **Multi-language** &mdash; EN, PT (auto-detected). ES, DE, FR with additional spaCy models
+- **Embedding model choice** &mdash; 11 models supported, from fast (all-MiniLM, 384d) to high-quality (bge-large, 1024d). Auto-detects dimensions
 - **Local-first** &mdash; SQLite + local embeddings + local NLP. Zero API calls, zero network, zero cost
 - **Privacy tags** &mdash; wrap sensitive content in `<private>...</private>` to exclude it from memory
 - **Fully configurable** &mdash; all thresholds, ratios, and behaviors via config.json
@@ -337,7 +339,16 @@ All behavior is customizable via `~/.cortex-claude/config.json`:
   },
   "embeddings": {
     "model": "all-MiniLM-L6-v2",
-    "batch_size": 32
+    "batch_size": 32,
+    "_available_models": [
+      "all-MiniLM-L6-v2 (384d, 80MB, fast)",
+      "all-mpnet-base-v2 (768d, 420MB, medium)",
+      "BAAI/bge-small-en-v1.5 (384d, 130MB, fast)",
+      "BAAI/bge-base-en-v1.5 (768d, 440MB, medium)",
+      "BAAI/bge-large-en-v1.5 (1024d, 1.3GB, best quality)",
+      "intfloat/e5-large-v2 (1024d, 1.3GB, best quality)",
+      "intfloat/multilingual-e5-small (384d, 470MB, multilingual)"
+    ]
   },
   "facts": {
     "extraction_method": "local",
