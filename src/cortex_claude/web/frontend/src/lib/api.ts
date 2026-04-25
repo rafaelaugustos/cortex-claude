@@ -49,3 +49,15 @@ export async function fetchEntity(name: string): Promise<EntityData> {
 export async function searchMemories(q: string): Promise<Memory[]> {
   return (await fetch(`${BASE}/api/search?q=${encodeURIComponent(q)}`)).json()
 }
+
+export async function deleteMemory(id: string): Promise<{ ok: boolean }> {
+  return (await fetch(`${BASE}/api/memory/${id}`, { method: 'DELETE' })).json()
+}
+
+export async function updateMemory(id: string, data: { content?: string; tags?: string[] }): Promise<{ ok: boolean }> {
+  return (await fetch(`${BASE}/api/memory/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })).json()
+}

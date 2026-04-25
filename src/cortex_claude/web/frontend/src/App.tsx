@@ -20,11 +20,13 @@ export default function App() {
     return stats.scopes.map(s => s.name)
   }, [stats])
 
-  useEffect(() => {
+  const reload = useCallback(() => {
     fetchStats().then(setStats)
     fetchMemories().then(setMemories)
     fetchGraph().then(setGraphData)
   }, [])
+
+  useEffect(() => { reload() }, [reload])
 
   const handleSearch = useCallback(async (q: string) => {
     if (q.length < 2) {
@@ -56,6 +58,24 @@ export default function App() {
   const handleFocusNode = useCallback((id: string) => {
     setFocusNodeId(id)
     setTimeout(() => setFocusNodeId(null), 500)
+  }, [])
+
+  const handleDeleted = useCallback((id: string) => {
+    setSelectedMemory(null)
+    setMemories(prev => prev.filter(m => m.id !== id))
+    reload()
+  }, [reload])
+
+  const handleUpdated = useCallback((id: string, content: string, tags: string[]) => {
+    setMemories(prev => prev.map(m =>
+      m.id === id ? { ...m, content, tags: JSON.stringify(tags) } : m
+    ))
+    setSelectedMemory(prev => {
+      if (prev && prev.id === id) {
+        return { ...prev, content, tags: JSON.stringify(tags) }
+      }
+      return prev
+    })
   }, [])
 
   return (
@@ -92,6 +112,8 @@ export default function App() {
           <MemoryDetail
             memory={selectedMemory}
             onClose={() => setSelectedMemory(null)}
+            onDeleted={handleDeleted}
+            onUpdated={handleUpdated}
           />
         )}
       </main>

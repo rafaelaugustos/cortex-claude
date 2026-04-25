@@ -24,6 +24,7 @@
   <a href="#quick-start">Quick Start</a> &bull;
   <a href="#how-it-works">How It Works</a> &bull;
   <a href="#tools">Tools</a> &bull;
+  <a href="#web-dashboard">Dashboard</a> &bull;
   <a href="#configuration">Configuration</a> &bull;
   <a href="#benchmarks">Benchmarks</a> &bull;
   <a href="#development">Development</a>
@@ -32,6 +33,14 @@
 <p align="center">
   Cortex gives Claude Code persistent memory through a local MCP server. Unlike solutions that dump everything into context, Cortex uses <strong>progressive recall</strong> &mdash; a 3-layer retrieval system that returns only what's relevant, using the minimum tokens needed.
 </p>
+
+<br>
+
+<p align="center">
+  <img src="docs/example-ui.gif" alt="Cortex Claude Dashboard" width="800">
+</p>
+
+<p align="center"><em>Interactive knowledge graph &mdash; explore entities, facts, and memories visually.</em></p>
 
 ---
 

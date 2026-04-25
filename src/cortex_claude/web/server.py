@@ -139,6 +139,51 @@ def api_search(query: str) -> list[dict]:
     )
 
 
+def api_delete_memory(memory_id: str) -> dict:
+    for _, db_path in _get_connections():
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.execute("PRAGMA foreign_keys=ON")
+            row = conn.execute("SELECT id FROM memories WHERE id = ?", (memory_id,)).fetchone()
+            if row:
+                conn.execute("DELETE FROM memory_vectors WHERE id = ?", (memory_id,))
+                conn.execute("DELETE FROM facts WHERE source_memory_id = ?", (memory_id,))
+                conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
+                conn.commit()
+                conn.close()
+                return {"ok": True, "deleted": memory_id}
+            conn.close()
+        except Exception:
+            pass
+    return {"ok": False, "error": "Memory not found"}
+
+
+def api_update_memory(memory_id: str, data: dict) -> dict:
+    for _, db_path in _get_connections():
+        try:
+            conn = sqlite3.connect(db_path)
+            row = conn.execute("SELECT id FROM memories WHERE id = ?", (memory_id,)).fetchone()
+            if row:
+                updates = []
+                params = []
+                if "content" in data:
+                    updates.append("content = ?")
+                    params.append(data["content"])
+                if "tags" in data:
+                    updates.append("tags = ?")
+                    params.append(json.dumps(data["tags"]) if isinstance(data["tags"], list) else data["tags"])
+                if updates:
+                    params.append(memory_id)
+                    conn.execute(f"UPDATE memories SET {', '.join(updates)} WHERE id = ?", params)
+                    conn.commit()
+                conn.close()
+                return {"ok": True, "updated": memory_id}
+            conn.close()
+        except Exception:
+            pass
+    return {"ok": False, "error": "Memory not found"}
+
+
 class CortexHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
@@ -149,6 +194,31 @@ class CortexHandler(BaseHTTPRequestHandler):
             self._handle_api(path, params)
         else:
             self._handle_static(path)
+
+    def do_DELETE(self):
+        parsed = urlparse(self.path)
+        if parsed.path.startswith("/api/memory/"):
+            memory_id = parsed.path.split("/api/memory/")[1]
+            self._json(api_delete_memory(memory_id))
+        else:
+            self._not_found()
+
+    def do_PUT(self):
+        parsed = urlparse(self.path)
+        if parsed.path.startswith("/api/memory/"):
+            memory_id = parsed.path.split("/api/memory/")[1]
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length)) if length else {}
+            self._json(api_update_memory(memory_id, body))
+        else:
+            self._not_found()
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, PUT, DELETE, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.end_headers()
 
     def _handle_api(self, path: str, params: dict):
         if path == "/api/stats":
