@@ -19,10 +19,10 @@ class FactRepository:
 
         conn.execute(
             """
-            INSERT INTO facts (id, subject, relation, object, confidence, source_memory_id, scope, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO facts (id, subject, relation, object, confidence, source_memory_id, scope, created_at, temporal)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (fact.id, fact.subject, fact.relation, fact.object, fact.confidence, fact.source_memory_id, fact.scope, fact.created_at),
+            (fact.id, fact.subject, fact.relation, fact.object, fact.confidence, fact.source_memory_id, fact.scope, fact.created_at, fact.temporal),
         )
         conn.commit()
         return fact.id
@@ -33,17 +33,18 @@ class FactRepository:
             existing = self._find_duplicate(conn, fact)
             if existing:
                 new_confidence = min(existing["confidence"] + 0.1, 1.0)
+                temporal = fact.temporal or existing.get("temporal")
                 conn.execute(
-                    "UPDATE facts SET confidence = ?, source_memory_id = ?, created_at = ? WHERE id = ?",
-                    (new_confidence, fact.source_memory_id, fact.created_at, existing["id"]),
+                    "UPDATE facts SET confidence = ?, source_memory_id = ?, created_at = ?, temporal = COALESCE(?, temporal) WHERE id = ?",
+                    (new_confidence, fact.source_memory_id, fact.created_at, temporal, existing["id"]),
                 )
             else:
                 conn.execute(
                     """
-                    INSERT INTO facts (id, subject, relation, object, confidence, source_memory_id, scope, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO facts (id, subject, relation, object, confidence, source_memory_id, scope, created_at, temporal)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (fact.id, fact.subject, fact.relation, fact.object, fact.confidence, fact.source_memory_id, fact.scope, fact.created_at),
+                    (fact.id, fact.subject, fact.relation, fact.object, fact.confidence, fact.source_memory_id, fact.scope, fact.created_at, fact.temporal),
                 )
                 saved += 1
         conn.commit()
@@ -51,11 +52,11 @@ class FactRepository:
 
     def _find_duplicate(self, conn: sqlite3.Connection, fact: Fact) -> dict | None:
         row = conn.execute(
-            "SELECT id, confidence FROM facts WHERE LOWER(subject) = ? AND LOWER(relation) = ? AND LOWER(object) = ?",
+            "SELECT id, confidence, temporal FROM facts WHERE LOWER(subject) = ? AND LOWER(relation) = ? AND LOWER(object) = ?",
             (fact.subject.lower(), fact.relation.lower(), fact.object.lower()),
         ).fetchone()
         if row:
-            return {"id": row["id"], "confidence": row["confidence"]}
+            return {"id": row["id"], "confidence": row["confidence"], "temporal": row["temporal"]}
         return None
 
     def consolidate(self, conn: sqlite3.Connection) -> int:
@@ -161,4 +162,5 @@ class FactRepository:
             source_memory_id=row["source_memory_id"],
             scope=row["scope"],
             created_at=row["created_at"],
+            temporal=row["temporal"] if "temporal" in row.keys() else None,
         )

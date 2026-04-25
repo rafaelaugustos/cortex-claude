@@ -3,6 +3,7 @@ from __future__ import annotations
 from cortex_claude.facts.normalizer import entities_match
 from cortex_claude.facts.patterns import extract_facts_patterns
 from cortex_claude.facts.spacy_extract import extract_facts_spacy
+from cortex_claude.facts.temporal import attach_temporal_to_facts
 from cortex_claude.models.fact import Fact
 
 
@@ -82,6 +83,8 @@ def extract_facts(
         claude_facts = extract_facts_claude(text)
         facts.extend(claude_facts)
         facts = _clean_facts(facts, min_confidence)
+
+    attach_temporal_to_facts(text, facts)
 
     return facts
 

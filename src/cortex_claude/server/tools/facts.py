@@ -24,6 +24,7 @@ async def handle_facts(
 
     lines = [f"Found {len(facts)} facts for '{topic}':"]
     for fact in facts:
-        lines.append(f"  {fact.subject} → {fact.relation} → {fact.object} (confidence: {fact.confidence:.1f})")
+        temporal = f" [{fact.temporal}]" if fact.temporal else ""
+        lines.append(f"  {fact.subject} → {fact.relation} → {fact.object} (confidence: {fact.confidence:.1f}){temporal}")
 
     return "\n".join(lines)

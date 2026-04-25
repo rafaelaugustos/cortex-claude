@@ -23,6 +23,7 @@ class Fact(BaseModel):
     source_memory_id: str = ""
     scope: str = "global"
     created_at: int = Field(default_factory=_now_ms)
+    temporal: str | None = None
 
 
 class FactQuery(BaseModel):

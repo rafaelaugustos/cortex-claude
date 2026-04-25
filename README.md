@@ -79,6 +79,7 @@ The system stops at the cheapest layer that answers the question. **66% fewer to
 - **Configurable scopes** &mdash; global, per-project, or custom memory boundaries
 - **Deduplication** &mdash; detects and merges near-identical memories automatically
 - **Fact merging** &mdash; when multiple memories mention the same fact, it's consolidated into one with boosted confidence
+- **Temporal awareness** &mdash; facts detect when things happened ("in April 2024", "yesterday", "since v2") and attach timestamps
 - **Decay system** &mdash; unused memories lose relevance over time, keeping results fresh
 - **Auto-capture** &mdash; hooks automatically save tool results (Bash, Read, Grep, Edit, Write) to memory
 - **Session context injection** &mdash; injects memory stats and known facts at session start
