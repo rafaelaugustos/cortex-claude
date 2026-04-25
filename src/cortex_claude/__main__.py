@@ -9,6 +9,10 @@ def main() -> None:
         run_setup()
     elif cmd == "daemon":
         _run_daemon()
+    elif cmd == "web":
+        port = int(sys.argv[2]) if len(sys.argv) > 2 else 37800
+        from cortex_claude.web.server import run_web
+        run_web(port=port)
     else:
         from cortex_claude.server.app import mcp, _init_engine
         _init_engine()

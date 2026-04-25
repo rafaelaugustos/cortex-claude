@@ -13,7 +13,7 @@
     <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License">
   </a>
   <a href="pyproject.toml">
-    <img src="https://img.shields.io/badge/version-0.3.0-green.svg" alt="Version">
+    <img src="https://img.shields.io/badge/version-0.4.0-green.svg" alt="Version">
   </a>
   <a href="pyproject.toml">
     <img src="https://img.shields.io/badge/python-%3E%3D3.11-brightgreen.svg" alt="Python">
@@ -226,6 +226,22 @@ Cortex strips everything between `<private>...</private>` before saving. Works i
 
 Combines **vector similarity** (semantic meaning) with **FTS5** (exact keyword match) for best recall. FTS5 synced automatically via SQLite triggers.
 
+### Web Dashboard
+
+Interactive knowledge graph visualization and memory browser:
+
+```bash
+cortex-claude web
+# Opens at http://localhost:37800
+```
+
+Features:
+- **Interactive knowledge graph** &mdash; nodes are entities, edges are relations. Click a node to see all its facts and related memories.
+- **Memory browser** &mdash; browse all memories with search, tags, scope, and decay score.
+- **Facts list** &mdash; all extracted triplets, click to focus on the graph node.
+- **Live stats** &mdash; memory count, fact count, scopes, storage size.
+- **Dark theme** &mdash; designed for developers.
+
 ---
 
 ## Cortex vs Traditional Memory (claude-mem, etc.)
@@ -246,7 +262,7 @@ Most memory solutions for AI assistants follow the same pattern: capture observa
 | **Auto-capture** | All tool calls via hooks | All tools (Bash, Read, Edit, Write, Grep, Glob, Agent, MCP, Web) via hooks + daemon |
 | **Session injection** | Full context dump on start | Lightweight facts injection via direct SQLite (<1s) |
 | **Dependencies** | Node.js, Bun, Chroma vector DB | Python + SQLite only (zero external services) |
-| **Web UI** | Viewer on localhost:37777 | CLI only (planned) |
+| **Web UI** | Viewer on localhost:37777 | Interactive graph dashboard on localhost:37800 |
 
 ### Where Cortex wins
 
@@ -260,7 +276,7 @@ Most memory solutions for AI assistants follow the same pattern: capture observa
 ### Where claude-mem wins
 
 - **Broader auto-capture** &mdash; captures all tool calls including MCP tools from third-party servers.
-- **Web viewer** &mdash; real-time memory browser at localhost:37777.
+- **Web viewer** &mdash; real-time memory browser (Cortex has an interactive graph dashboard, but claude-mem's is more mature).
 - **One-command install** &mdash; `npx claude-mem install` vs manual MCP config.
 - **Larger community** &mdash; more stars, Discord, extensive documentation site.
 
