@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS facts (
     scope TEXT NOT NULL,
     created_at INTEGER NOT NULL,
     temporal TEXT,
+    access_count INTEGER DEFAULT 0,
     FOREIGN KEY (source_memory_id) REFERENCES memories(id) ON DELETE CASCADE
 );
 
@@ -102,6 +103,8 @@ def initialize_schema(conn: sqlite3.Connection, embedding_dim: int = 384) -> Non
             _migrate_to_v3(conn, embedding_dim)
         if current < 4:
             _migrate_to_v4(conn)
+        if current < 5:
+            _migrate_to_v5(conn)
         return
 
     conn.executescript(SCHEMA_SQL)
@@ -155,4 +158,13 @@ def _migrate_to_v4(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE facts ADD COLUMN temporal TEXT")
 
     conn.execute("UPDATE schema_version SET version = 4")
+    conn.commit()
+
+
+def _migrate_to_v5(conn: sqlite3.Connection) -> None:
+    columns = [row[1] for row in conn.execute("PRAGMA table_info(facts)").fetchall()]
+    if "access_count" not in columns:
+        conn.execute("ALTER TABLE facts ADD COLUMN access_count INTEGER DEFAULT 0")
+
+    conn.execute("UPDATE schema_version SET version = 5")
     conn.commit()

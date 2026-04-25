@@ -13,7 +13,7 @@
     <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License">
   </a>
   <a href="pyproject.toml">
-    <img src="https://img.shields.io/badge/version-0.4.0-green.svg" alt="Version">
+    <img src="https://img.shields.io/badge/version-0.5.0-green.svg" alt="Version">
   </a>
   <a href="pyproject.toml">
     <img src="https://img.shields.io/badge/python-%3E%3D3.11-brightgreen.svg" alt="Python">
@@ -80,6 +80,7 @@ The system stops at the cheapest layer that answers the question. **66% fewer to
 - **Deduplication** &mdash; detects and merges near-identical memories automatically
 - **Fact merging** &mdash; when multiple memories mention the same fact, it's consolidated into one with boosted confidence
 - **Temporal awareness** &mdash; facts detect when things happened ("in April 2024", "yesterday", "since v2") and attach timestamps
+- **Confidence recalibration** &mdash; facts gain confidence when accessed frequently, lose it when contradicted by newer information
 - **Decay system** &mdash; unused memories lose relevance over time, keeping results fresh
 - **Auto-capture** &mdash; hooks automatically save tool results (Bash, Read, Grep, Edit, Write) to memory
 - **Session context injection** &mdash; injects memory stats and known facts at session start
@@ -410,6 +411,27 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
 ## Architecture
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical specification.
+
+---
+
+## Something Missing?
+
+We'd love to hear from you. Open an issue on GitHub:
+
+**Found a bug?**
+1. Go to [Issues](https://github.com/rafaelaugustos/cortex-claude/issues/new?template=bug_report.md&labels=bug)
+2. Describe what happened vs. what you expected
+3. Include your Python version, OS, and steps to reproduce
+
+**Have a feature request?**
+1. Go to [Issues](https://github.com/rafaelaugustos/cortex-claude/issues/new?template=feature_request.md&labels=enhancement)
+2. Describe the problem you're trying to solve
+3. Suggest a solution if you have one
+
+**Want to contribute?**
+1. Check [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines
+2. Look for issues labeled [`good first issue`](https://github.com/rafaelaugustos/cortex-claude/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+3. Fork, branch, code, test, PR
 
 ---
 

@@ -152,7 +152,65 @@ class FactRepository:
         row = conn.execute("SELECT COUNT(*) FROM facts").fetchone()
         return row[0]
 
+    def boost_accessed(self, conn: sqlite3.Connection, fact_ids: list[str], amount: float = 0.02) -> None:
+        for fid in fact_ids:
+            conn.execute(
+                "UPDATE facts SET access_count = access_count + 1, confidence = MIN(confidence + ?, 1.0) WHERE id = ?",
+                (amount, fid),
+            )
+        conn.commit()
+
+    EXCLUSIVE_RELATIONS = {"be", "is", "defaults_to", "has_value", "located_in", "runs_on", "written_in"}
+
+    def detect_contradictions(self, conn: sqlite3.Connection, fact: Fact) -> list[Fact]:
+        if fact.relation.lower() not in self.EXCLUSIVE_RELATIONS:
+            return []
+
+        rows = conn.execute(
+            """
+            SELECT * FROM facts
+            WHERE LOWER(subject) = ? AND LOWER(relation) = ? AND LOWER(object) != ?
+            ORDER BY confidence DESC
+            """,
+            (fact.subject.lower(), fact.relation.lower(), fact.object.lower()),
+        ).fetchall()
+        return [self._row_to_fact(row) for row in rows]
+
+    def penalize(self, conn: sqlite3.Connection, fact_ids: list[str], amount: float = 0.15) -> None:
+        for fid in fact_ids:
+            conn.execute(
+                "UPDATE facts SET confidence = MAX(confidence - ?, 0.1) WHERE id = ?",
+                (amount, fid),
+            )
+        conn.commit()
+
+    def recalibrate(self, conn: sqlite3.Connection) -> int:
+        rows = conn.execute(
+            "SELECT id, confidence, access_count FROM facts"
+        ).fetchall()
+
+        updated = 0
+        for row in rows:
+            access = row["access_count"] or 0
+            base = row["confidence"]
+
+            if access > 10:
+                boost = min(access * 0.01, 0.2)
+                new_conf = min(base + boost, 1.0)
+            elif access == 0 and base > 0.6:
+                new_conf = base - 0.02
+            else:
+                continue
+
+            if abs(new_conf - base) > 0.001:
+                conn.execute("UPDATE facts SET confidence = ? WHERE id = ?", (new_conf, row["id"]))
+                updated += 1
+
+        conn.commit()
+        return updated
+
     def _row_to_fact(self, row) -> Fact:
+        keys = row.keys()
         return Fact(
             id=row["id"],
             subject=row["subject"],
@@ -162,5 +220,6 @@ class FactRepository:
             source_memory_id=row["source_memory_id"],
             scope=row["scope"],
             created_at=row["created_at"],
-            temporal=row["temporal"] if "temporal" in row.keys() else None,
+            temporal=row["temporal"] if "temporal" in keys else None,
+            access_count=row["access_count"] if "access_count" in keys else 0,
         )

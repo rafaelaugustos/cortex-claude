@@ -24,6 +24,7 @@ class Fact(BaseModel):
     scope: str = "global"
     created_at: int = Field(default_factory=_now_ms)
     temporal: str | None = None
+    access_count: int = 0
 
 
 class FactQuery(BaseModel):

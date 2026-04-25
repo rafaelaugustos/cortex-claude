@@ -52,6 +52,7 @@ class CortexEngine:
                 min_score=self._config.decay_min_score,
             )
             self._fact_repo.consolidate(conn)
+            self._fact_repo.recalibrate(conn)
 
     async def save(
         self,
@@ -103,6 +104,10 @@ class CortexEngine:
             fact.source_memory_id = memory.id
             fact.scope = write_scope
         if facts:
+            for fact in facts:
+                contradictions = self._fact_repo.detect_contradictions(conn, fact)
+                if contradictions:
+                    self._fact_repo.penalize(conn, [c.id for c in contradictions])
             self._fact_repo.save_batch(conn, facts)
 
         return SaveResult(
@@ -160,6 +165,8 @@ class CortexEngine:
             conn = self._storage.get_database(s)
             facts = self._fact_repo.search(conn, topic, relation, limit)
             all_facts.extend(facts)
+            if facts:
+                self._fact_repo.boost_accessed(conn, [f.id for f in facts])
 
         all_facts.sort(key=lambda f: f.confidence, reverse=True)
         return all_facts[:limit]
