@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { Header } from '@/components/Header'
 import { Sidebar } from '@/components/Sidebar'
 import { GraphView } from '@/components/GraphView'
@@ -14,6 +14,11 @@ export default function App() {
 
   const [selectedEntity, setSelectedEntity] = useState<{ name: string; data: EntityData } | null>(null)
   const [selectedMemory, setSelectedMemory] = useState<Memory | null>(null)
+
+  const scopes = useMemo(() => {
+    if (!stats) return []
+    return stats.scopes.map(s => s.name)
+  }, [stats])
 
   useEffect(() => {
     fetchStats().then(setStats)
@@ -62,6 +67,7 @@ export default function App() {
       <Sidebar
         memories={memories}
         facts={graphData.edges}
+        scopes={scopes}
         onSearch={handleSearch}
         onSelectMemory={handleSelectMemory}
         onFocusNode={handleFocusNode}
