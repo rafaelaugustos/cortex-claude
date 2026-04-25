@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Literal
 
 from cortex_claude.core.decay import recalculate_decay_scores
+from cortex_claude.core.privacy import is_fully_private, strip_private
 from cortex_claude.core.scope_manager import ScopeManager
 from cortex_claude.core.token_budget import TokenBudget
 from cortex_claude.embeddings import EmbeddingEngine, count_tokens
@@ -58,6 +59,11 @@ class CortexEngine:
         scope: str | None = None,
         cwd: str = ".",
     ) -> SaveResult:
+        if is_fully_private(content):
+            return SaveResult(memory_id="", scope="", tokens_stored=0)
+
+        content = strip_private(content)
+
         write_scope = scope or self._scope_manager.get_write_scope(cwd)
         conn = self._storage.get_database(write_scope)
 

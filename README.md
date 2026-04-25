@@ -13,7 +13,7 @@
     <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License">
   </a>
   <a href="pyproject.toml">
-    <img src="https://img.shields.io/badge/version-0.1.0-green.svg" alt="Version">
+    <img src="https://img.shields.io/badge/version-0.3.0-green.svg" alt="Version">
   </a>
   <a href="pyproject.toml">
     <img src="https://img.shields.io/badge/python-%3E%3D3.11-brightgreen.svg" alt="Python">
@@ -75,38 +75,49 @@ The system stops at the cheapest layer that answers the question. **66% fewer to
 - **Background daemon** &mdash; pre-loaded model for instant saves via Unix socket (~0.3s vs ~5s cold start)
 - **Multi-language** &mdash; EN, PT (auto-detected). ES, DE, FR with additional spaCy models
 - **Local-first** &mdash; SQLite + local embeddings + local NLP. Zero API calls, zero network, zero cost
+- **Privacy tags** &mdash; wrap sensitive content in `<private>...</private>` to exclude it from memory
 - **Fully configurable** &mdash; all thresholds, ratios, and behaviors via config.json
 
 ---
 
 ## Quick Start
 
-### Install
+### One-Command Install
 
 ```bash
-pip install cortex-claude
+pip install cortex-claude && cortex-claude setup
+```
 
-# With Claude-assisted extraction (optional)
+That's it. The setup command:
+- Configures the MCP server globally for Claude Code
+- Installs auto-capture hooks (SessionStart + PostToolUse)
+- Creates `~/.claude/CLAUDE.md` with instructions for Claude to use Cortex automatically
+- Downloads the embedding model (~80MB) and spaCy model (~12MB)
+- Starts the background daemon for instant saves
+
+Restart Claude Code and it works in **every project**, no per-project config needed. Claude will automatically consult Cortex before saying "I don't know" and save important context to memory.
+
+### With Claude-assisted extraction (optional)
+
+```bash
 pip install cortex-claude[claude]
 ```
 
-### Configure Claude Code
+### Manual Setup (alternative)
 
-Add a `.mcp.json` to your project root (or `~/.claude.json` for global):
+If you prefer manual configuration, add a `.mcp.json` to your project root:
 
 ```json
 {
   "mcpServers": {
     "cortex": {
       "type": "stdio",
-      "command": "python",
+      "command": "python3",
       "args": ["-m", "cortex_claude"]
     }
   }
 }
 ```
-
-First run downloads the embedding model (~80MB) and spaCy model (~12MB) automatically.
 
 ### Use
 
@@ -191,6 +202,26 @@ score = e^(-lambda * days) * (1 + log(access_count))
 
 Recalculated on server startup. Frequently accessed memories get boosted. Stale ones fade.
 
+### Auto-Capture &amp; Hooks
+
+Cortex uses Claude Code hooks to work automatically:
+
+- **SessionStart** &mdash; injects memory stats and known facts when you open a session. Claude knows it has memory and consults it before saying "I don't know".
+- **PostToolUse** &mdash; captures results from **all tools** in background: Bash, Read, Edit, Write, Grep, Glob, Agent, WebSearch, WebFetch, and all third-party MCP tools. No manual save needed.
+- **Background Daemon** &mdash; keeps the embedding model pre-loaded via Unix socket. First save after boot: ~5s (model load). Subsequent saves: **~0.3s**.
+
+All hooks are installed globally by `cortex-claude setup`. No per-project config needed.
+
+### Privacy
+
+Wrap sensitive content in `<private>` tags to exclude it from memory:
+
+```
+The API uses JWT for auth. <private>API_KEY=sk-abc123secret</private> Tokens expire in 24h.
+```
+
+Cortex strips everything between `<private>...</private>` before saving. Works in both manual saves and auto-capture. If the entire content is private, nothing is saved.
+
 ### Hybrid Search
 
 Combines **vector similarity** (semantic meaning) with **FTS5** (exact keyword match) for best recall. FTS5 synced automatically via SQLite triggers.
@@ -212,7 +243,7 @@ Most memory solutions for AI assistants follow the same pattern: capture observa
 | **Graph navigation** | None | Multi-hop traversal (A &rarr; B &rarr; C) |
 | **Staleness** | No decay | Unused memories lose relevance over time |
 | **Duplicates** | Can accumulate | Auto-merged (cosine similarity > 0.92) |
-| **Auto-capture** | All tool calls via hooks | Bash, Read, Grep, Edit, Write via hooks + background daemon |
+| **Auto-capture** | All tool calls via hooks | All tools (Bash, Read, Edit, Write, Grep, Glob, Agent, MCP, Web) via hooks + daemon |
 | **Session injection** | Full context dump on start | Lightweight facts injection via direct SQLite (<1s) |
 | **Dependencies** | Node.js, Bun, Chroma vector DB | Python + SQLite only (zero external services) |
 | **Web UI** | Viewer on localhost:37777 | CLI only (planned) |

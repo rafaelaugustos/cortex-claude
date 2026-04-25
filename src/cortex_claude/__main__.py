@@ -1,12 +1,16 @@
 import sys
 
-from cortex_claude.server.app import mcp, _init_engine
-
 
 def main() -> None:
-    if len(sys.argv) > 1 and sys.argv[1] == "daemon":
+    cmd = sys.argv[1] if len(sys.argv) > 1 else ""
+
+    if cmd == "setup":
+        from cortex_claude.setup import run_setup
+        run_setup()
+    elif cmd == "daemon":
         _run_daemon()
     else:
+        from cortex_claude.server.app import mcp, _init_engine
         _init_engine()
         mcp.run(transport="stdio")
 
