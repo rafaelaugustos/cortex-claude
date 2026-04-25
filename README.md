@@ -70,6 +70,9 @@ The system stops at the cheapest layer that answers the question. **66% fewer to
 - **Configurable scopes** &mdash; global, per-project, or custom memory boundaries
 - **Deduplication** &mdash; detects and merges near-identical memories automatically
 - **Decay system** &mdash; unused memories lose relevance over time, keeping results fresh
+- **Auto-capture** &mdash; hooks automatically save tool results (Bash, Read, Grep, Edit, Write) to memory
+- **Session context injection** &mdash; injects memory stats and known facts at session start
+- **Background daemon** &mdash; pre-loaded model for instant saves via Unix socket (~0.3s vs ~5s cold start)
 - **Multi-language** &mdash; EN, PT (auto-detected). ES, DE, FR with additional spaCy models
 - **Local-first** &mdash; SQLite + local embeddings + local NLP. Zero API calls, zero network, zero cost
 - **Fully configurable** &mdash; all thresholds, ratios, and behaviors via config.json
@@ -201,18 +204,38 @@ Most memory solutions for AI assistants follow the same pattern: capture observa
 | | Traditional (claude-mem) | Cortex |
 |---|---|---|
 | **Storage model** | Compressed text / summaries | Knowledge graph (structured triplets) + summaries + full text |
-| **Retrieval** | Auto-inject into every session | On-demand via MCP tools (only when needed) |
-| **Token cost** | ~500-2000 tokens injected always | ~50-100 tokens (facts layer), scales only if needed |
-| **Understanding** | Linear summaries | Structured facts with entity relationships |
+| **Retrieval** | Auto-inject into every session (~500-2000 tokens) | Progressive recall: facts &rarr; summaries &rarr; full (~50-100 tokens) |
+| **Intelligence** | Linear summaries | Structured facts with entity relationships + graph traversal |
 | **Search** | Keyword / vector | Hybrid: semantic embedding + FTS5 keyword + graph traversal |
 | **Extraction** | Captures tool call observations | NLP fact extraction (spaCy + patterns + optional Claude) |
-| **Entity awareness** | None | "postgres" = "postgresql" = "pg" (normalized) |
+| **Entity awareness** | None | "postgres" = "postgresql" = "pg" (normalized + fuzzy match) |
 | **Graph navigation** | None | Multi-hop traversal (A &rarr; B &rarr; C) |
 | **Staleness** | No decay | Unused memories lose relevance over time |
 | **Duplicates** | Can accumulate | Auto-merged (cosine similarity > 0.92) |
+| **Auto-capture** | All tool calls via hooks | Bash, Read, Grep, Edit, Write via hooks + background daemon |
+| **Session injection** | Full context dump on start | Lightweight facts injection via direct SQLite (<1s) |
 | **Dependencies** | Node.js, Bun, Chroma vector DB | Python + SQLite only (zero external services) |
+| **Web UI** | Viewer on localhost:37777 | CLI only (planned) |
 
-**The fundamental difference:** traditional memory asks *"what happened?"* &mdash; Cortex asks *"what matters?"*
+### Where Cortex wins
+
+- **Token efficiency** &mdash; 66% fewer tokens returned. Progressive recall stops at the cheapest sufficient layer.
+- **Structured understanding** &mdash; knowledge graph with traversal vs flat text. Ask "what's connected to auth?" and get real graph navigation.
+- **Entity intelligence** &mdash; normalizes and deduplicates entities across memories. "postgres", "PostgreSQL", and "pg" are the same thing.
+- **Freshness** &mdash; decay system ensures frequently accessed memories rank higher. Old, unused memories fade.
+- **Zero external services** &mdash; no Chroma, no Bun, no Node.js. Just Python + SQLite.
+- **Multi-language** &mdash; fact extraction works in EN, PT (auto-detected), with ES/DE/FR support.
+
+### Where claude-mem wins
+
+- **Broader auto-capture** &mdash; captures all tool calls including MCP tools from third-party servers.
+- **Web viewer** &mdash; real-time memory browser at localhost:37777.
+- **One-command install** &mdash; `npx claude-mem install` vs manual MCP config.
+- **Larger community** &mdash; more stars, Discord, extensive documentation site.
+
+### The fundamental difference
+
+Traditional memory asks *"what happened?"* &mdash; Cortex asks *"what matters?"*
 
 Traditional solutions observe and replay. Cortex understands, structures, and retrieves surgically. The result: fewer tokens, more relevant answers, and a knowledge graph that grows smarter over time.
 
