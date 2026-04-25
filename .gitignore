@@ -18,3 +18,5 @@ build/
 *.onnx
 .env
 .env.*
+node_modules/
+src/cortex_claude/web/frontend/node_modules/

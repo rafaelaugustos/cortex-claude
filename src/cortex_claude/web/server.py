@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import mimetypes
 import sqlite3
 import glob as globmod
 import os
@@ -8,9 +9,8 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
-from cortex_claude.web.ui import get_html
-
 CORTEX_HOME = Path(os.environ.get("CORTEX_HOME", str(Path.home() / ".cortex-claude")))
+STATIC_DIR = Path(__file__).parent / "static"
 
 
 def _get_connections() -> list[tuple[str, str]]:
@@ -134,7 +134,7 @@ def api_entity(name: str) -> dict:
 def api_search(query: str) -> list[dict]:
     q = f"%{query.lower()}%"
     return _query_all(
-        "SELECT id, content, summary, tags, scope, created_at, decay_score FROM memories WHERE LOWER(content) LIKE ? OR LOWER(tags) LIKE ? ORDER BY decay_score DESC LIMIT 50",
+        "SELECT id, content, summary, tags, scope, created_at, accessed_at, access_count, decay_score FROM memories WHERE LOWER(content) LIKE ? OR LOWER(tags) LIKE ? ORDER BY decay_score DESC LIMIT 50",
         (q, q),
     )
 
@@ -145,9 +145,13 @@ class CortexHandler(BaseHTTPRequestHandler):
         path = parsed.path
         params = parse_qs(parsed.query)
 
-        if path == "/" or path == "":
-            self._html(get_html())
-        elif path == "/api/stats":
+        if path.startswith("/api/"):
+            self._handle_api(path, params)
+        else:
+            self._handle_static(path)
+
+    def _handle_api(self, path: str, params: dict):
+        if path == "/api/stats":
             self._json(api_stats())
         elif path == "/api/memories":
             scope = params.get("scope", [None])[0]
@@ -163,20 +167,36 @@ class CortexHandler(BaseHTTPRequestHandler):
         else:
             self._not_found()
 
+    def _handle_static(self, path: str):
+        if path == "/" or path == "":
+            path = "/index.html"
+
+        file_path = STATIC_DIR / path.lstrip("/")
+
+        if not file_path.exists() or not file_path.is_file():
+            file_path = STATIC_DIR / "index.html"
+
+        if not file_path.exists():
+            self._not_found()
+            return
+
+        content_type = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
+        body = file_path.read_bytes()
+
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        if "assets/" in str(file_path):
+            self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+        self.end_headers()
+        self.wfile.write(body)
+
     def _json(self, data):
         body = json.dumps(data).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.end_headers()
-        self.wfile.write(body)
-
-    def _html(self, content):
-        body = content.encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
 
