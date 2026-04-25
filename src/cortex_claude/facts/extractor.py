@@ -53,7 +53,21 @@ def _canonicalize_entities(facts: list[Fact]) -> list[Fact]:
     return facts
 
 
-def extract_facts(text: str, min_confidence: float = 0.5) -> list[Fact]:
+def _clean_facts(facts: list[Fact], min_confidence: float) -> list[Fact]:
+    facts = _deduplicate_facts(facts)
+    facts = _canonicalize_entities(facts)
+    facts = _deduplicate_facts(facts)
+    facts = [f for f in facts if f.confidence >= min_confidence and f.subject != f.object]
+    facts.sort(key=lambda f: f.confidence, reverse=True)
+    return facts
+
+
+def extract_facts(
+    text: str,
+    min_confidence: float = 0.5,
+    claude_fallback: bool = False,
+    claude_confidence_threshold: float = 0.5,
+) -> list[Fact]:
     if not text or not text.strip():
         return []
 
@@ -61,11 +75,19 @@ def extract_facts(text: str, min_confidence: float = 0.5) -> list[Fact]:
 
     facts.extend(extract_facts_spacy(text))
     facts.extend(extract_facts_patterns(text))
+    facts = _clean_facts(facts, min_confidence)
 
-    facts = _deduplicate_facts(facts)
-    facts = _canonicalize_entities(facts)
-    facts = _deduplicate_facts(facts)
-    facts = [f for f in facts if f.confidence >= min_confidence]
-    facts.sort(key=lambda f: f.confidence, reverse=True)
+    if claude_fallback and _should_use_claude(facts, claude_confidence_threshold):
+        from cortex_claude.facts.claude_extract import extract_facts_claude
+        claude_facts = extract_facts_claude(text)
+        facts.extend(claude_facts)
+        facts = _clean_facts(facts, min_confidence)
 
     return facts
+
+
+def _should_use_claude(facts: list[Fact], threshold: float) -> bool:
+    if len(facts) < 2:
+        return True
+    high_confidence = [f for f in facts if f.confidence > threshold]
+    return len(high_confidence) < 2

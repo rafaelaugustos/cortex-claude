@@ -25,6 +25,8 @@ class CortexConfig:
     # Facts
     fact_extraction_method: str = "local"
     fact_min_confidence: float = 0.5
+    fact_claude_fallback: bool = False
+    fact_claude_confidence_threshold: float = 0.5
 
     # Decay
     decay_lambda: float = 0.05
@@ -74,6 +76,10 @@ class CortexConfig:
         facts = raw.get("facts", {})
         config.fact_extraction_method = facts.get("extraction_method", config.fact_extraction_method)
         config.fact_min_confidence = facts.get("min_confidence", config.fact_min_confidence)
+        config.fact_claude_fallback = facts.get("claude_fallback", config.fact_claude_fallback)
+        config.fact_claude_confidence_threshold = facts.get(
+            "claude_confidence_threshold", config.fact_claude_confidence_threshold
+        )
 
         decay = raw.get("decay", {})
         config.decay_lambda = decay.get("lambda", config.decay_lambda)

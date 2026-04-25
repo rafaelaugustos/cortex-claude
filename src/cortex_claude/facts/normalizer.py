@@ -35,6 +35,7 @@ def normalize_entity(text: str) -> str:
         text = CANONICAL_ALIASES[text]
 
     text = re.sub(r"[\s_-]+", " ", text).strip()
+    text = text.strip(".,;:!?")
     return text
 
 

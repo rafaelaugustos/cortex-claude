@@ -86,7 +86,12 @@ class CortexEngine:
 
         self._memory_repo.save(conn, memory, embedding)
 
-        facts = extract_facts(content, min_confidence=self._config.fact_min_confidence)
+        facts = extract_facts(
+            content,
+            min_confidence=self._config.fact_min_confidence,
+            claude_fallback=self._config.fact_claude_fallback,
+            claude_confidence_threshold=self._config.fact_claude_confidence_threshold,
+        )
         for fact in facts:
             fact.source_memory_id = memory.id
             fact.scope = write_scope

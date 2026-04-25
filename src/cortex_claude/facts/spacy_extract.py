@@ -58,6 +58,31 @@ def _get_compound_span(token: Token) -> str:
     return " ".join(parts)
 
 
+def _get_conjuncts(token: Token) -> list[Token]:
+    conjuncts = [token]
+    for child in token.children:
+        if child.dep_ == "conj":
+            conjuncts.append(child)
+            conjuncts.extend(t for t in child.children if t.dep_ == "conj")
+    return conjuncts
+
+
+def _collect_objects(root: Token) -> list[Token]:
+    objects = []
+    for child in root.children:
+        if child.dep_ in ("dobj", "obj", "attr", "oprd", "obl"):
+            objects.extend(_get_conjuncts(child))
+        elif child.dep_ in ("prep", "case"):
+            for grandchild in child.children:
+                if grandchild.dep_ in ("pobj", "nmod", "obl"):
+                    objects.extend(_get_conjuncts(grandchild))
+        elif child.dep_ == "agent":
+            for grandchild in child.children:
+                if grandchild.dep_ == "pobj":
+                    objects.extend(_get_conjuncts(grandchild))
+    return objects
+
+
 def extract_facts_spacy(text: str) -> list[Fact]:
     lang = _detect_lang(text)
     nlp = _get_nlp(lang)
@@ -70,36 +95,51 @@ def extract_facts_spacy(text: str) -> list[Fact]:
         if root.pos_ not in ("VERB", "AUX"):
             continue
 
-        subjects = [
-            child for child in root.children
-            if child.dep_ in ("nsubj", "nsubj:pass", "nsubjpass")
-        ]
-
-        objects = [
-            child for child in root.children
-            if child.dep_ in ("dobj", "obj", "attr", "oprd", "obl")
-        ]
-
+        subjects = []
         for child in root.children:
-            if child.dep_ in ("prep", "case", "obl"):
-                for grandchild in child.children:
-                    if grandchild.dep_ in ("pobj", "nmod", "obl"):
-                        objects.append(grandchild)
+            if child.dep_ in ("nsubj", "nsubj:pass", "nsubjpass"):
+                subjects.extend(_get_conjuncts(child))
 
-        for subj in subjects:
-            subj_text = _get_compound_span(subj)
-            for obj in objects:
-                obj_text = _get_compound_span(obj)
+        objects = _collect_objects(root)
 
-                if len(subj_text.strip()) < 2 or len(obj_text.strip()) < 2:
-                    continue
+        # Passive: "X is validated by Y" → subject is the object, agent is subject
+        is_passive = any(
+            child.dep_ in ("nsubj:pass", "nsubjpass") for child in root.children
+        )
+        agent_tokens = []
+        if is_passive:
+            for child in root.children:
+                if child.dep_ == "agent":
+                    for gc in child.children:
+                        if gc.dep_ == "pobj":
+                            agent_tokens.extend(_get_conjuncts(gc))
 
-                facts.append(Fact(
-                    subject=normalize_entity(subj_text),
-                    relation=normalize_relation(root.lemma_),
-                    object=normalize_entity(obj_text),
-                    confidence=0.8,
-                ))
+        if is_passive and agent_tokens:
+            for agent in agent_tokens:
+                agent_text = _get_compound_span(agent)
+                for subj in subjects:
+                    subj_text = _get_compound_span(subj)
+                    if len(agent_text.strip()) < 2 or len(subj_text.strip()) < 2:
+                        continue
+                    facts.append(Fact(
+                        subject=normalize_entity(agent_text),
+                        relation=normalize_relation(root.lemma_),
+                        object=normalize_entity(subj_text),
+                        confidence=0.8,
+                    ))
+        else:
+            for subj in subjects:
+                subj_text = _get_compound_span(subj)
+                for obj in objects:
+                    obj_text = _get_compound_span(obj)
+                    if len(subj_text.strip()) < 2 or len(obj_text.strip()) < 2:
+                        continue
+                    facts.append(Fact(
+                        subject=normalize_entity(subj_text),
+                        relation=normalize_relation(root.lemma_),
+                        object=normalize_entity(obj_text),
+                        confidence=0.8,
+                    ))
 
     facts.extend(_extract_ner_facts(doc))
     return facts
