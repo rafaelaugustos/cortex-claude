@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 7
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -19,12 +19,25 @@ CREATE TABLE IF NOT EXISTS memories (
     updated_at INTEGER NOT NULL,
     accessed_at INTEGER NOT NULL,
     access_count INTEGER DEFAULT 0,
-    decay_score REAL DEFAULT 1.0
+    decay_score REAL DEFAULT 1.0,
+    cluster_id INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_memories_scope ON memories(scope);
 CREATE INDEX IF NOT EXISTS idx_memories_accessed ON memories(accessed_at);
 CREATE INDEX IF NOT EXISTS idx_memories_decay ON memories(decay_score);
+CREATE INDEX IF NOT EXISTS idx_memories_cluster ON memories(scope, cluster_id);
+
+CREATE TABLE IF NOT EXISTS clusters (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    scope TEXT NOT NULL,
+    label TEXT,
+    centroid BLOB,
+    member_count INTEGER DEFAULT 0,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_clusters_scope ON clusters(scope);
 
 CREATE TABLE IF NOT EXISTS facts (
     id TEXT PRIMARY KEY,
@@ -32,7 +45,7 @@ CREATE TABLE IF NOT EXISTS facts (
     relation TEXT NOT NULL,
     object TEXT NOT NULL,
     confidence REAL DEFAULT 1.0,
-    source_memory_id TEXT NOT NULL,
+    source_memory_id TEXT,
     scope TEXT NOT NULL,
     created_at INTEGER NOT NULL,
     temporal TEXT,
@@ -105,6 +118,10 @@ def initialize_schema(conn: sqlite3.Connection, embedding_dim: int = 384) -> Non
             _migrate_to_v4(conn)
         if current < 5:
             _migrate_to_v5(conn)
+        if current < 6:
+            _migrate_to_v6(conn)
+        if current < 7:
+            _migrate_to_v7(conn)
         return
 
     conn.executescript(SCHEMA_SQL)
@@ -167,4 +184,85 @@ def _migrate_to_v5(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE facts ADD COLUMN access_count INTEGER DEFAULT 0")
 
     conn.execute("UPDATE schema_version SET version = 5")
+    conn.commit()
+
+
+def _migrate_to_v7(conn: sqlite3.Connection) -> None:
+    """Allow facts.source_memory_id to be NULL (for code-graph facts that
+    aren't extracted from a memory). SQLite can't drop NOT NULL in place, so
+    we rebuild the table preserving data."""
+    columns = conn.execute("PRAGMA table_info(facts)").fetchall()
+    source_col = next((c for c in columns if c[1] == "source_memory_id"), None)
+    if source_col is None or source_col[3] == 0:
+        # column already nullable (notnull=0)
+        conn.execute("UPDATE schema_version SET version = 7")
+        conn.commit()
+        return
+
+    conn.execute("PRAGMA foreign_keys=OFF")
+    conn.executescript(
+        """
+        CREATE TABLE facts_new (
+            id TEXT PRIMARY KEY,
+            subject TEXT NOT NULL,
+            relation TEXT NOT NULL,
+            object TEXT NOT NULL,
+            confidence REAL DEFAULT 1.0,
+            source_memory_id TEXT,
+            scope TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            temporal TEXT,
+            access_count INTEGER DEFAULT 0,
+            FOREIGN KEY (source_memory_id) REFERENCES memories(id) ON DELETE CASCADE
+        );
+
+        INSERT INTO facts_new (id, subject, relation, object, confidence,
+                               source_memory_id, scope, created_at, temporal, access_count)
+        SELECT id, subject, relation, object, confidence,
+               source_memory_id, scope, created_at, temporal, access_count
+        FROM facts;
+
+        DROP TABLE facts;
+        ALTER TABLE facts_new RENAME TO facts;
+
+        CREATE INDEX IF NOT EXISTS idx_facts_subject ON facts(subject);
+        CREATE INDEX IF NOT EXISTS idx_facts_object ON facts(object);
+        CREATE INDEX IF NOT EXISTS idx_facts_relation ON facts(relation);
+        CREATE INDEX IF NOT EXISTS idx_facts_subject_relation ON facts(subject, relation);
+        """
+    )
+    conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("UPDATE schema_version SET version = 7")
+    conn.commit()
+
+
+def _migrate_to_v6(conn: sqlite3.Connection) -> None:
+    columns = [row[1] for row in conn.execute("PRAGMA table_info(memories)").fetchall()]
+    if "cluster_id" not in columns:
+        conn.execute("ALTER TABLE memories ADD COLUMN cluster_id INTEGER")
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_memories_cluster ON memories(scope, cluster_id)"
+    )
+
+    clusters_exists = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='clusters'"
+    ).fetchone()
+
+    if not clusters_exists:
+        conn.execute(
+            """
+            CREATE TABLE clusters (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                scope TEXT NOT NULL,
+                label TEXT,
+                centroid BLOB,
+                member_count INTEGER DEFAULT 0,
+                updated_at INTEGER NOT NULL
+            )
+            """
+        )
+        conn.execute("CREATE INDEX idx_clusters_scope ON clusters(scope)")
+
+    conn.execute("UPDATE schema_version SET version = 6")
     conn.commit()

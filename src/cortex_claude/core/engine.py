@@ -14,7 +14,12 @@ from cortex_claude.facts import extract_facts
 from cortex_claude.models.fact import Fact
 from cortex_claude.models.memory import Memory, RecallItem, RecallResult, SaveResult
 from cortex_claude.server.config import CortexConfig
-from cortex_claude.storage import FactRepository, MemoryRepository, StorageManager
+from cortex_claude.storage import (
+    ClusterRepository,
+    FactRepository,
+    MemoryRepository,
+    StorageManager,
+)
 from cortex_claude.summarizer import summarize
 
 
@@ -42,6 +47,10 @@ class CortexEngine:
         self._scope_manager = ScopeManager(self._base_path)
         self._memory_repo = MemoryRepository()
         self._fact_repo = FactRepository()
+        self._cluster_repo = ClusterRepository()
+
+    def get_scope_connection(self, scope: str):
+        return self._storage.get_database(scope)
 
     def initialize(self) -> None:
         for scope in self._storage.list_scopes():
@@ -179,9 +188,17 @@ class CortexEngine:
         cwd: str = ".",
     ) -> list[Fact]:
         scopes = [scope] if scope else self._scope_manager.resolve(cwd)
+
+        if start.startswith("cluster:"):
+            seed_entities = self._cluster_seed_entities(start, scopes, top_n=5)
+            if not seed_entities:
+                return []
+            frontier: list[str] = list(seed_entities)
+        else:
+            frontier = [start.lower()]
+
         visited: set[str] = set()
         result: list[Fact] = []
-        frontier: list[str] = [start.lower()]
 
         for _ in range(max_hops):
             next_frontier: list[str] = []
@@ -213,6 +230,68 @@ class CortexEngine:
                 unique.append(f)
 
         return unique
+
+    def _cluster_seed_entities(
+        self,
+        start: str,
+        scopes: list[str],
+        top_n: int = 5,
+    ) -> list[str]:
+        try:
+            cluster_id = int(start.split(":", 1)[1])
+        except (IndexError, ValueError):
+            return []
+
+        for s in scopes:
+            try:
+                conn = self._storage.get_database(s)
+            except Exception:
+                continue
+
+            cluster = self._cluster_repo.get(conn, cluster_id)
+            if cluster is None or cluster.scope != s:
+                continue
+
+            import numpy as np
+
+            centroid = cluster.centroid
+            if centroid is None:
+                continue
+
+            members = conn.execute(
+                """
+                SELECT m.id, v.embedding
+                FROM memories m
+                JOIN memory_vectors v ON v.id = m.id
+                WHERE m.cluster_id = ?
+                """,
+                (cluster_id,),
+            ).fetchall()
+            if not members:
+                continue
+
+            scored = []
+            for mid, emb_blob in members:
+                emb = np.frombuffer(emb_blob, dtype=np.float32)
+                na = float(np.linalg.norm(emb))
+                nb = float(np.linalg.norm(centroid))
+                sim = float(np.dot(emb, centroid) / (na * nb)) if na and nb else 0.0
+                scored.append((mid, sim))
+            scored.sort(key=lambda x: x[1], reverse=True)
+            central_ids = [mid for mid, _ in scored[:top_n]]
+
+            seen: set[str] = set()
+            entities: list[str] = []
+            for mid in central_ids:
+                for fact in self._fact_repo.search_by_memory(conn, mid):
+                    for token in (fact.subject, fact.object):
+                        key = token.strip().lower()
+                        if key and key not in seen and len(key) >= 3:
+                            seen.add(key)
+                            entities.append(key)
+            return entities
+
+        return []
 
     def _recall_facts(
         self,
@@ -428,11 +507,70 @@ class CortexEngine:
                 seen[key] = item
 
         unique = sorted(seen.values(), key=lambda x: x.score, reverse=True)
+        self._enrich_with_clusters(unique)
         return RecallResult(
             memories=unique,
             total_tokens=budget.used_tokens,
             query=query,
         )
+
+    def _enrich_with_clusters(self, items: list[RecallItem]) -> None:
+        by_scope: dict[str, list[RecallItem]] = {}
+        for item in items:
+            by_scope.setdefault(item.scope, []).append(item)
+
+        for scope, scope_items in by_scope.items():
+            ids = [i.memory_id for i in scope_items if i.memory_id]
+            if not ids:
+                continue
+            try:
+                conn = self._storage.get_database(scope)
+            except Exception:
+                continue
+            placeholders = ",".join("?" for _ in ids)
+            rows = conn.execute(
+                f"""
+                SELECT m.id, m.cluster_id, c.label
+                FROM memories m
+                LEFT JOIN clusters c ON c.id = m.cluster_id
+                WHERE m.id IN ({placeholders})
+                """,
+                ids,
+            ).fetchall()
+            cluster_map = {r[0]: (r[1], r[2]) for r in rows}
+            for item in scope_items:
+                info = cluster_map.get(item.memory_id)
+                if info:
+                    item.cluster_id = info[0]
+                    item.cluster_label = info[1]
+
+    def reset_clusters(self, scope: str) -> None:
+        conn = self._storage.get_database(scope)
+        conn.execute("UPDATE memories SET cluster_id = NULL WHERE scope = ?", (scope,))
+        conn.execute("DELETE FROM clusters WHERE scope = ?", (scope,))
+        conn.commit()
+
+    async def list_clusters(
+        self,
+        scope: str | None = None,
+        cwd: str = ".",
+    ) -> list[dict]:
+        scopes = [scope] if scope else self._scope_manager.resolve(cwd)
+        out: list[dict] = []
+        for s in scopes:
+            try:
+                conn = self._storage.get_database(s)
+            except Exception:
+                continue
+            for c in self._cluster_repo.list_for_scope(conn, s):
+                out.append({
+                    "id": c.id,
+                    "scope": c.scope,
+                    "label": c.label,
+                    "member_count": c.member_count,
+                    "updated_at": c.updated_at,
+                })
+        return out
 
     async def forget(
         self,

@@ -140,3 +140,59 @@ class MemoryRepository:
     def get_all_ids(self, conn: sqlite3.Connection) -> list[str]:
         rows = conn.execute("SELECT id FROM memories").fetchall()
         return [row[0] for row in rows]
+
+    def iter_with_embeddings(
+        self,
+        conn: sqlite3.Connection,
+        unclustered_only: bool = False,
+    ) -> list[tuple[str, np.ndarray]]:
+        if unclustered_only:
+            sql = """
+                SELECT m.id, v.embedding
+                FROM memories m
+                JOIN memory_vectors v ON v.id = m.id
+                WHERE m.cluster_id IS NULL
+            """
+        else:
+            sql = """
+                SELECT m.id, v.embedding
+                FROM memories m
+                JOIN memory_vectors v ON v.id = m.id
+            """
+        out: list[tuple[str, np.ndarray]] = []
+        for row in conn.execute(sql).fetchall():
+            arr = np.frombuffer(row[1], dtype=np.float32)
+            out.append((row[0], arr))
+        return out
+
+    def set_cluster(
+        self,
+        conn: sqlite3.Connection,
+        memory_id: str,
+        cluster_id: int | None,
+    ) -> None:
+        conn.execute(
+            "UPDATE memories SET cluster_id = ? WHERE id = ?",
+            (cluster_id, memory_id),
+        )
+
+    def set_cluster_batch(
+        self,
+        conn: sqlite3.Connection,
+        assignments: list[tuple[str, int | None]],
+    ) -> None:
+        if not assignments:
+            return
+        conn.executemany(
+            "UPDATE memories SET cluster_id = ? WHERE id = ?",
+            [(cid, mid) for mid, cid in assignments],
+        )
+        conn.commit()
+
+    def get_cluster_id(self, conn: sqlite3.Connection, memory_id: str) -> int | None:
+        row = conn.execute(
+            "SELECT cluster_id FROM memories WHERE id = ?", (memory_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        return row[0]

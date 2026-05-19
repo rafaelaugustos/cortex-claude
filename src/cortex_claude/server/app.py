@@ -8,6 +8,8 @@ from mcp.server.fastmcp import FastMCP
 
 from cortex_claude.core.engine import CortexEngine
 from cortex_claude.server.config import CortexConfig
+from cortex_claude.server.tools.clusters import handle_clusters
+from cortex_claude.server.tools.code import handle_code, handle_index_code
 from cortex_claude.server.tools.facts import handle_facts
 from cortex_claude.server.tools.forget import handle_forget
 from cortex_claude.server.tools.recall import handle_recall
@@ -93,10 +95,12 @@ async def cortex_traverse(
     max_hops: int = 2,
     scope: str | None = None,
 ) -> str:
-    """Traverse the knowledge graph from an entity.
+    """Traverse the knowledge graph from an entity or cluster.
 
     Follows connections through multiple hops to discover related information.
-    Example: 'auth' → 'JWT' → 'express-jwt' (2 hops).
+    - Entity: 'auth' → 'JWT' → 'express-jwt' (2 hops).
+    - Cluster: 'cluster:42' seeds the traversal from the most-central memories
+      of cluster 42 (use cortex_clusters to find IDs).
     """
     return await handle_traverse(_get_engine(), start, _cwd(), max_hops, scope)
 
@@ -138,3 +142,53 @@ async def cortex_status(
     Returns total memories, facts, scopes, storage size.
     """
     return await handle_status(_get_engine(), _cwd(), scope)
+
+
+@mcp.tool()
+async def cortex_code(
+    symbol: str,
+    scope: str | None = None,
+) -> str:
+    """Look up a code symbol in the knowledge graph.
+
+    Returns: definition file/line, language, what it calls, who calls it,
+    what it extends, imports, and which memories mention it.
+    Use this BEFORE reading a file if you only need to understand a function/class.
+    Token cost: ~50-150 vs ~1000+ for reading the whole file.
+    """
+    return await handle_code(_get_engine(), _cwd(), symbol, scope)
+
+
+@mcp.tool()
+async def cortex_index_code(
+    path: str,
+    scope: str | None = None,
+    recursive: bool = True,
+) -> str:
+    """Index a file or directory into the code knowledge graph.
+
+    Walks the path (recursively by default), parses each supported source file
+    via tree-sitter, and stores symbols/calls/imports as facts. Supported:
+    Python, JS/TS, Go, Java, Swift, Kotlin. Skips node_modules, __pycache__,
+    build/dist/.venv/target by default.
+    """
+    return await handle_index_code(_get_engine(), _cwd(), path, scope, recursive)
+
+
+@mcp.tool()
+async def cortex_clusters(
+    action: Literal["list", "backfill"] = "list",
+    scope: str | None = None,
+    limit: int = 50,
+) -> str:
+    """List or rebuild memory clusters (sub-graphs that form automatically by similarity).
+
+    Actions:
+      - 'list' (default): show existing clusters with their labels and sizes.
+      - 'backfill': wipe and re-cluster all memories in the scope from scratch.
+        Use this once after enabling clustering, or after tuning similarity_threshold.
+
+    Each scope's memories are grouped by semantic similarity. Labels are derived
+    from the most frequent entities in each cluster's facts.
+    """
+    return await handle_clusters(_get_engine(), _cwd(), action, scope, limit)

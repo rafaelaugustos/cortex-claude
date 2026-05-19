@@ -13,7 +13,7 @@
     <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License">
   </a>
   <a href="pyproject.toml">
-    <img src="https://img.shields.io/badge/version-0.5.0-green.svg" alt="Version">
+    <img src="https://img.shields.io/badge/version-0.6.0-green.svg" alt="Version">
   </a>
   <a href="pyproject.toml">
     <img src="https://img.shields.io/badge/python-%3E%3D3.11-brightgreen.svg" alt="Python">
@@ -70,6 +70,9 @@ The system stops at the cheapest layer that answers the question. **66% fewer to
 ## Key Features
 
 - **Progressive recall** &mdash; 3 layers (facts &rarr; summaries &rarr; full content), stops at the cheapest sufficient layer
+- **Code graph** &mdash; tree-sitter extracts symbols (functions, classes, calls, imports) from Python, JS, TS, Go, Java, Swift, Kotlin into the same knowledge graph. `cortex_code(symbol)` returns definition + callers + callees in ~100 tokens vs ~1000+ to read the file
+- **Auto-clustering** &mdash; memories self-organize into semantic sub-graphs by embedding similarity. Labels derived from the most frequent entities. Navigate top-down via `cortex_clusters`
+- **Smart capture filter** &mdash; heuristic gate (keywords, entity density, tool type) decides what to keep from auto-capture. Optional LLM-judge for ambiguous cases. No more polluting memory with `ls` and trivial reads.
 - **Knowledge graph** &mdash; auto-extracts structured facts via spaCy NLP with multi-hop traversal
 - **Smart extraction** &mdash; handles bullet lists, key:value pairs, comma lists, slash-separated tech, parentheticals, passive voice
 - **Claude fallback** &mdash; optional Claude-assisted extraction when local NLP isn't enough
@@ -149,14 +152,17 @@ Just talk to Claude naturally. Cortex works in the background:
 
 ## Tools
 
-Cortex exposes **7 MCP tools** to Claude Code:
+Cortex exposes **10 MCP tools** to Claude Code:
 
 | Tool | What it does | Token cost |
 |------|-------------|------------|
 | `cortex_save` | Store memory with auto fact extraction, summarization, and embedding | N/A |
 | `cortex_recall` | Progressive retrieval: facts &rarr; summaries &rarr; full content | Controlled via `max_tokens` |
 | `cortex_facts` | Direct knowledge graph query, returns structured triplets | ~5-15 tokens per fact |
-| `cortex_traverse` | Navigate the knowledge graph across multiple hops | ~5-15 tokens per connection |
+| `cortex_traverse` | Navigate the knowledge graph; accepts `start="cluster:42"` to begin from a sub-graph | ~5-15 tokens per connection |
+| `cortex_code` | Look up a code symbol: definition, callers, callees, mentions | ~50-150 tokens vs ~1000+ to read the file |
+| `cortex_index_code` | Index a file or directory into the code graph (Python, JS/TS, Go, Java, Swift, Kotlin) | N/A |
+| `cortex_clusters` | List or rebuild memory sub-graphs (auto-formed by similarity) | ~10 tokens per cluster |
 | `cortex_forget` | Delete memories by query or ID (dry-run by default) | N/A |
 | `cortex_scopes` | Manage scopes: list, create, delete, link/unlink directories | N/A |
 | `cortex_status` | Dashboard: memory count, fact count, storage size per scope | N/A |
@@ -220,10 +226,44 @@ Recalculated on server startup. Frequently accessed memories get boosted. Stale 
 Cortex uses Claude Code hooks to work automatically:
 
 - **SessionStart** &mdash; injects memory stats and known facts when you open a session. Claude knows it has memory and consults it before saying "I don't know".
-- **PostToolUse** &mdash; captures results from **all tools** in background: Bash, Read, Edit, Write, Grep, Glob, Agent, WebSearch, WebFetch, and all third-party MCP tools. No manual save needed.
-- **Background Daemon** &mdash; keeps the embedding model pre-loaded via Unix socket. First save after boot: ~5s (model load). Subsequent saves: **~0.3s**.
+- **PostToolUse** &mdash; captures results from **all tools** in background: Bash, Read, Edit, Write, Grep, Glob, Agent, WebSearch, WebFetch, and all third-party MCP tools. Code files (Python, JS/TS, Go, Java, Swift, Kotlin) trigger an additional `index_code` step that extracts symbols into the code graph.
+- **Capture filter** &mdash; before persisting, every auto-captured save passes through a heuristic gate (size, signal keywords, tool type, entity density). `ls`, trivial reads, and noisy edits are dropped. Ambiguous cases can optionally consult an LLM judge.
+- **Background Daemon** &mdash; keeps the embedding model pre-loaded via Unix socket. First save after boot: ~5s (model load). Subsequent saves: **~0.3s**. On the first startup after upgrading to v0.6.0 (schema v7), the daemon auto-backfills clusters for any scope with memories but no clusters yet.
 
 All hooks are installed globally by `cortex-claude setup`. No per-project config needed.
+
+### Code Graph
+
+Tree-sitter parses your source files into structured facts in the same knowledge graph used for memories:
+
+```
+my_func   → defined_in  → /path/to/file.py:42
+my_func   → in_language → python
+my_func   → calls       → other_func
+MyClass   → extends     → BaseClass
+sample    → imports     → json
+```
+
+Trigger manually with `cortex_index_code(path)` for a directory, or let auto-capture index files as you read/edit them. Look up symbols with `cortex_code(symbol)` &mdash; returns definition, callers, callees, extends, imports, and which memories mention it. **Supported languages:** Python, JavaScript, TypeScript/TSX, Go, Java, Swift, Kotlin.
+
+When a saved memory mentions a known symbol, Cortex automatically creates a `memory:<id> → mentions → <symbol>` fact, linking decisions and bug reports to the code they reference.
+
+### Memory Clusters (Sub-graphs)
+
+As memories accumulate, Cortex groups them into semantic clusters using cosine similarity on their embeddings. Each cluster gets a human-readable label derived from the most frequent entities in its facts (e.g. `"embeddings, vectors, sqlite-vec"`).
+
+```bash
+# List clusters
+cortex_clusters
+
+# Traverse the graph starting from a cluster
+cortex_traverse start="cluster:42"
+
+# Rebuild clusters after tuning similarity_threshold
+cortex_clusters action="backfill"
+```
+
+Clustering runs incrementally in the background after every N saves (default 20, with a 5-minute cooldown). The default `similarity_threshold=0.70` balances cluster coherence with singleton noise &mdash; tune it in `config.json` if your corpus needs tighter or looser grouping.
 
 ### Privacy
 

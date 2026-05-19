@@ -39,6 +39,8 @@ class RecallItem(BaseModel):
     scope: str
     tags: list[str] = Field(default_factory=list)
     created_at: int
+    cluster_id: int | None = None
+    cluster_label: str | None = None
 
 
 class RecallResult(BaseModel):

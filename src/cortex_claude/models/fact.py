@@ -20,7 +20,7 @@ class Fact(BaseModel):
     relation: str
     object: str
     confidence: float = 1.0
-    source_memory_id: str = ""
+    source_memory_id: str | None = ""
     scope: str = "global"
     created_at: int = Field(default_factory=_now_ms)
     temporal: str | None = None

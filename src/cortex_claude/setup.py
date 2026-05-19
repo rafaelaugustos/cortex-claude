@@ -16,24 +16,29 @@ HOOKS_DIR = CORTEX_HOME / "hooks"
 
 CLAUDE_MD_CONTENT = """# Cortex Memory
 
-You have access to **Cortex**, a persistent memory system with a knowledge graph. Use it.
+You have access to **Cortex**, a persistent memory system with a knowledge graph and code graph. Use it.
 
 ## Rules
 
-1. **Before saying "I don't know"** — always check Cortex first with `cortex_recall` or `cortex_facts`.
-2. **Save important context** — when you learn something significant about the project, user preferences, architecture decisions, or bugs, save it with `cortex_save`.
-3. **Use facts for quick lookups** — `cortex_facts` returns structured triplets at minimal token cost. Use it for "what does X use?" type questions.
-4. **Use traverse for exploration** — `cortex_traverse` follows entity connections. Use it to discover related information you didn't know to ask about.
-5. **Respect privacy** — never save content wrapped in `<private>...</private>` tags. Cortex strips these automatically, but be mindful of sensitive data.
+1. **Before reading a code file to find a function** — try `cortex_code(symbol)` first. Returns where it's defined, what it calls, who calls it, and which memories mention it. ~50-150 tokens vs ~1000+ to read the file.
+2. **Before saying "I don't know"** — always check Cortex first with `cortex_recall` or `cortex_facts`.
+3. **Save important context** — when you learn something significant about the project, user preferences, architecture decisions, or bugs, save it with `cortex_save`.
+4. **Use facts for quick lookups** — `cortex_facts` returns structured triplets at minimal token cost. Use it for "what does X use?" type questions.
+5. **Use traverse for exploration** — `cortex_traverse` follows entity connections. Use it to discover related information you didn't know to ask about. Accepts `start="cluster:42"` to begin from a sub-graph.
+6. **Use clusters for top-down navigation** — `cortex_clusters` lists semantic sub-graphs of your memory so you can see what topics exist before drilling in.
+7. **Respect privacy** — never save content wrapped in `<private>...</private>` tags. Cortex strips these automatically, but be mindful of sensitive data.
 
 ## Available Tools
 
 | Tool | When to use |
 |------|------------|
+| `cortex_code` | Look up a code symbol: definition, callers, callees, mentions. Cheap alternative to reading a file. |
+| `cortex_index_code` | Index a file or directory into the code graph (Python, JS/TS, Go, Java, Swift, Kotlin). |
 | `cortex_save` | Save information worth remembering across sessions |
 | `cortex_recall` | Search memories by meaning (semantic + keyword) |
 | `cortex_facts` | Quick structured lookup from knowledge graph |
-| `cortex_traverse` | Explore connections: start from entity, follow links |
+| `cortex_traverse` | Explore connections: start from entity or `cluster:<id>` |
+| `cortex_clusters` | List or rebuild sub-graphs of memory (auto-formed by similarity) |
 | `cortex_forget` | Delete outdated or wrong memories (dry-run first) |
 | `cortex_scopes` | Manage memory scopes (list, create, link) |
 | `cortex_status` | Check memory stats (count, size, scopes) |
@@ -49,7 +54,7 @@ You have access to **Cortex**, a persistent memory system with a knowledge graph
 
 ## What NOT to Save
 
-- Code that's already in files (it's in the repo)
+- Code that's already in files (it's in the repo — use `cortex_code` instead)
 - Temporary debugging output
 - Content marked with `<private>` tags
 - Information that changes every commit (use git for that)
@@ -235,16 +240,26 @@ if not content:
     sys.exit(0)
 
 sock_path = os.path.expanduser('$SOCKET')
-try:
-    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    s.settimeout(3)
-    s.connect(sock_path)
-    s.sendall(json.dumps({'action':'save','content':content,'tags':tags,'cwd':cwd}).encode())
-    s.shutdown(socket.SHUT_WR)
-    s.recv(512)
-    s.close()
-except Exception:
-    pass
+
+def send(payload):
+    try:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(3)
+        s.connect(sock_path)
+        s.sendall(json.dumps(payload).encode())
+        s.shutdown(socket.SHUT_WR)
+        s.recv(512)
+        s.close()
+    except Exception:
+        pass
+
+send({'action':'save','content':content,'tags':tags,'cwd':cwd})
+
+CODE_EXTS = ('.py','.js','.mjs','.cjs','.jsx','.ts','.tsx','.go','.java','.swift','.kt','.kts')
+if tool in ('Read', 'Edit', 'Write'):
+    file_path = ti.get('file_path', '')
+    if file_path and file_path.lower().endswith(CODE_EXTS):
+        send({'action':'index_code','path':file_path,'cwd':cwd})
 ") &
 
 exit 0

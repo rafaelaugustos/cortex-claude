@@ -42,6 +42,12 @@ class CortexConfig:
     scope_default: str = "global"
     scope_search_order: str = "project_first"
 
+    # Auto-capture filter (raw dict, parsed by CaptureFilterConfig in capture module)
+    capture: dict = field(default_factory=dict)
+
+    # Clustering (raw dict, parsed by ClusteringConfig in clustering module)
+    clustering: dict = field(default_factory=dict)
+
     @classmethod
     def load(cls, base_path: Path | None = None) -> CortexConfig:
         path = base_path or Path.home() / ".cortex-claude"
@@ -98,5 +104,8 @@ class CortexConfig:
         config.scope_mappings = scopes.get("mappings", config.scope_mappings)
         config.scope_default = scopes.get("default", config.scope_default)
         config.scope_search_order = scopes.get("search_order", config.scope_search_order)
+
+        config.capture = raw.get("capture", {}) or {}
+        config.clustering = raw.get("clustering", {}) or {}
 
         return config

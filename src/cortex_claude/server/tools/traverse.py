@@ -18,6 +18,11 @@ async def handle_traverse(
     )
 
     if not facts:
+        if start.startswith("cluster:"):
+            return (
+                f"No connections found for {start}. "
+                f"Check the cluster ID with cortex_clusters."
+            )
         return f"No connections found from '{start}'."
 
     lines = [f"Graph traversal from '{start}' ({max_hops} hops, {len(facts)} connections):"]
