@@ -106,7 +106,17 @@ class TestMentionFacts:
         assert mention_facts("m", "anything", set(), "global") == []
 
     def test_short_tokens_ignored(self):
-        """The regex requires 3+ chars to avoid matching every 'a' or 'in'."""
+        """The regex requires 4+ chars to avoid matching every 'a' or 'in'."""
         known = {"go"}
         facts = mention_facts("m", "go here", known, "global")
         assert facts == []  # 'go' is only 2 chars, won't be tokenized
+
+    def test_stoplist_filters_common_generic_names(self):
+        """Common, low-signal identifiers (get/set/run/init/...) are the
+        biggest source of false-positive mentions and are filtered even if
+        they happen to be a known symbol name."""
+        known = {"init", "main", "test", "my_func"}
+        content = "Run init() then main() and test() before calling my_func()"
+        facts = mention_facts("m", content, known, "global")
+        objects = {f.object for f in facts}
+        assert objects == {"my_func"}

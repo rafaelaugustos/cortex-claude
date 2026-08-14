@@ -10,7 +10,16 @@ from cortex_claude.models.fact import Fact
 CODE_FACT_CONFIDENCE = 0.95
 MENTION_CONFIDENCE = 0.7
 
-_IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
+# Minimum identifier length is 4 (not 3): short, extremely common names like
+# "get"/"run"/"set" are very likely to appear in memory text without meaning
+# "this memory is about that function" — they're the biggest source of false
+# `mentions` facts. Combined with _MENTION_STOPLIST below for common names
+# that survive the length cut.
+_IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{3,}")
+
+_MENTION_STOPLIST = {
+    "init", "main", "test", "self", "this", "data", "value", "index", "type", "name",
+}
 
 
 def known_symbol_names(conn: sqlite3.Connection, scope: str) -> set[str]:
@@ -30,12 +39,19 @@ def mention_facts(
     scope: str,
 ) -> list[Fact]:
     """Find symbol names mentioned in memory content and emit
-    `memory:<id> → mentions → <symbol>` facts."""
+    `memory:<id> → mentions → <symbol>` facts.
+
+    This is best-effort textual matching, not scope-aware analysis: it has
+    no notion of imports or lexical scope, so a memory mentioning a common
+    word can link to every same-named symbol in the project. `_IDENT_RE`'s
+    length cutoff and `_MENTION_STOPLIST` reduce the worst false positives
+    (short, generic names) but do not eliminate them.
+    """
     if not known_symbols or not content:
         return []
 
     tokens = set(_IDENT_RE.findall(content))
-    matched = tokens & known_symbols
+    matched = (tokens & known_symbols) - _MENTION_STOPLIST
     if not matched:
         return []
 
@@ -61,6 +77,10 @@ def symbols_to_facts(symbols: list[Symbol]) -> list[Fact]:
       - subject → calls → callee           (one per call site)
       - subject → extends → parent_class
       - subject → imports → module_path
+
+    `calls`/`extends` resolution is purely textual (same-name matching
+    within the parsed file), not scope- or import-aware — two same-named
+    functions in different files/scopes will share the same graph node.
     """
     facts: list[Fact] = []
     seen: set[tuple[str, str, str]] = set()

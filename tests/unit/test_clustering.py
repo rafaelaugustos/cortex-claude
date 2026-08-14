@@ -101,6 +101,43 @@ class TestClustering:
         assert stats.assigned == 0
         assert stats.new_clusters == 0
 
+    def test_backfill_is_deterministic_across_runs(self, db: sqlite3.Connection):
+        """Two full backfills over the same data (reset cluster_id to NULL
+        between runs) must assign memories to clusters the same way, since
+        `iter_with_embeddings` orders by created_at ASC."""
+        _seed_group(db, group=0, count=4, label_terms=["embeddings"])
+        _seed_group(db, group=1, count=4, label_terms=["mcp"])
+
+        engine = ClusteringEngine(ClusteringConfig(similarity_threshold=0.5))
+        engine.cluster_scope(db, "global")
+
+        first_assignment = {
+            row["id"]: row["cluster_id"]
+            for row in db.execute("SELECT id, cluster_id FROM memories").fetchall()
+        }
+        first_sizes = sorted(c.member_count for c in ClusterRepository().list_for_scope(db, "global"))
+
+        # Reset and re-run, simulating action="backfill".
+        db.execute("UPDATE memories SET cluster_id = NULL")
+        db.execute("DELETE FROM clusters")
+        db.commit()
+        engine.cluster_scope(db, "global")
+
+        second_sizes = sorted(c.member_count for c in ClusterRepository().list_for_scope(db, "global"))
+        assert first_sizes == second_sizes
+
+        # Same relative grouping: memories that were together before are
+        # together again (cluster ids themselves may differ across runs).
+        second_assignment = {
+            row["id"]: row["cluster_id"]
+            for row in db.execute("SELECT id, cluster_id FROM memories").fetchall()
+        }
+        for mid_a, cid_a in first_assignment.items():
+            for mid_b, cid_b in first_assignment.items():
+                same_before = cid_a == cid_b
+                same_after = second_assignment[mid_a] == second_assignment[mid_b]
+                assert same_before == same_after
+
 
 class TestClusterTraverse:
     """Tests for cluster:<id> seed mode in CortexEngine.traverse_graph."""

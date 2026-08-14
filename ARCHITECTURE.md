@@ -1313,6 +1313,12 @@ uv run python -m cortex_claude --transport stdio
 | Embedding generation | < 10ms/text | Single text, CPU only |
 | Token efficiency vs claude-mem | 70-90% reduction | Facts-only path vs full dump |
 
+### Known Limitation: Cold-Start Latency
+
+Cortex is a Python process that loads `sentence-transformers` (PyTorch) and `spaCy` — cold start is on the order of seconds, not milliseconds. This is a real cost compared to single-binary tools with no ML dependencies (e.g. Rust-based CLI proxies). It's mitigated, not eliminated, by the background daemon (`daemon.py`): the daemon keeps the embedding model resident in memory and listens on a Unix socket, so only the *first* save/recall after the daemon boots pays the cold-start cost (~5s); every request after that is ~0.3s. If the daemon isn't running (first install, or it crashed), the MCP server itself pays the full cold-start cost inline.
+
+This is an accepted tradeoff of the current design (local NLP + local embeddings, zero API calls) rather than something actively being optimized away — there's no plan to port the hot path to a compiled language. If daemon cold-start becomes a bottleneck in practice, the next lever to pull is lazy-loading spaCy only when `claude_fallback`-style extraction actually needs it, not eagerly at daemon boot.
+
 ---
 
 ## 19. Roadmap

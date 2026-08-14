@@ -103,6 +103,7 @@ async def handle_index_code(
     path: str,
     scope: str | None = None,
     recursive: bool = True,
+    max_files: int | None = None,
 ) -> str:
     target = Path(path).expanduser().resolve()
     if not target.exists():
@@ -119,6 +120,11 @@ async def handle_index_code(
             f for f in files
             if not any(part.startswith(".") or part in _SKIP_DIRS for part in f.parts)
         ]
+
+    truncated = False
+    if max_files is not None and len(files) > max_files:
+        files = files[:max_files]
+        truncated = True
 
     if not files:
         return f"no supported code files found at {target}"
@@ -154,6 +160,9 @@ async def handle_index_code(
 
         for fact in facts:
             fact.scope = write_scope
+        # Re-indexing an edited file must not accumulate stale facts for
+        # symbols that were removed or renamed since the last index.
+        repo.delete_by_source_file(conn, write_scope, str(f))
         repo.save_batch(conn, facts)
 
         total_symbols += len(symbols)
@@ -167,4 +176,6 @@ async def handle_index_code(
     ]
     if errors:
         lines.append(f"  errors:  {errors}")
+    if truncated:
+        lines.append(f"  note:    stopped at max_files={max_files}, more files were not indexed")
     return "\n".join(lines)

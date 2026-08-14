@@ -44,6 +44,8 @@ class CortexDaemon:
         self._last_cluster_at: dict[str, float] = {}
         self._cluster_in_flight: set[str] = set()
         self._known_symbols_cache: dict[str, set[str]] = {}
+        self._project_scan_in_flight: set[str] = set()
+        self._project_scan_tasks: dict[str, asyncio.Task] = {}
 
     async def handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         try:
@@ -158,7 +160,54 @@ class CortexDaemon:
             )
             return result
 
+        elif action == "index_project":
+            cwd = request.get("cwd", ".")
+            stats = self._maybe_index_project(cwd)
+            return {"ok": True, **stats}
+
         return {"error": f"unknown action: {action}"}
+
+    def _maybe_index_project(self, cwd: str) -> dict:
+        """Fire-and-forget whole-project code scan, triggered from
+        SessionStart. Only runs once per scope: if the scope already has
+        code-graph facts (relation='defined_in'), this is a no-op — the
+        existing incremental Read/Edit indexing keeps it fresh from there.
+        """
+        scope = self._engine._scope_manager.auto_project_scope(cwd)
+
+        if scope in self._project_scan_in_flight:
+            return {"skipped": "already-in-flight", "scope": scope}
+
+        conn = self._engine.get_scope_connection(scope)
+        already_indexed = conn.execute(
+            "SELECT 1 FROM facts WHERE scope = ? AND relation = 'defined_in' LIMIT 1",
+            (scope,),
+        ).fetchone()
+        if already_indexed:
+            return {"skipped": "already-indexed", "scope": scope}
+
+        self._project_scan_in_flight.add(scope)
+        task = asyncio.create_task(self._run_project_scan(cwd, scope))
+        self._project_scan_tasks[scope] = task
+        return {"started": True, "scope": scope}
+
+    async def _run_project_scan(self, cwd: str, scope: str) -> None:
+        from cortex_claude.server.tools.code import handle_index_code
+
+        try:
+            print(
+                f"[cortex] project scan: indexing '{cwd}' into scope '{scope}'",
+                file=sys.stderr,
+                flush=True,
+            )
+            result = await handle_index_code(
+                self._engine, cwd=cwd, path=cwd, scope=scope, max_files=2000,
+            )
+            print(f"[cortex] project scan done: {result}", file=sys.stderr, flush=True)
+        except Exception as e:
+            print(f"[cortex] project scan failed: {e}", file=sys.stderr, flush=True)
+        finally:
+            self._project_scan_in_flight.discard(scope)
 
     def _index_code_file(self, path: str, scope: str | None, cwd: str) -> dict:
         from pathlib import Path
@@ -195,7 +244,11 @@ class CortexDaemon:
             fact.scope = write_scope
 
         from cortex_claude.storage import FactRepository
-        FactRepository().save_batch(conn, facts)
+        repo = FactRepository()
+        # Prevent stale facts from accumulating across repeated auto-index
+        # runs (this path fires on every Read/Edit of a code file).
+        repo.delete_by_source_file(conn, write_scope, str(path))
+        repo.save_batch(conn, facts)
 
         self._known_symbols_cache.pop(write_scope, None)
 

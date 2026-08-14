@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from cortex_claude.models.scope import ScopeConfig
+
+_SLUG_RE = re.compile(r"[^a-z0-9-]+")
+_DASH_COLLAPSE_RE = re.compile(r"-+")
 
 
 class ScopeManager:
@@ -43,6 +47,30 @@ class ScopeManager:
     def get_write_scope(self, cwd: str) -> str:
         scopes = self.resolve(cwd)
         return scopes[0]
+
+    def auto_project_scope(self, cwd: str) -> str:
+        """Scope to use for whole-project code indexing when no scope is
+        explicitly mapped for `cwd`.
+
+        Unlike `get_write_scope` (used by save/recall/auto-capture, which
+        intentionally falls back to "global"), this derives a
+        `project:<dir-name>` scope from the directory name so that
+        full-project code scans for different, unconfigured projects don't
+        all land in the same "global" graph. Only affects code indexing —
+        does not persist a mapping to config.json and does not change
+        `get_write_scope`'s behavior.
+        """
+        scopes = self.resolve(cwd)
+        explicit = scopes[0]
+        if explicit != "global":
+            return explicit
+
+        name = Path(cwd).resolve().name
+        slug = _SLUG_RE.sub("-", name.lower())
+        slug = _DASH_COLLAPSE_RE.sub("-", slug).strip("-")
+        if not slug:
+            return "global"
+        return f"project:{slug}"
 
     def reload(self) -> None:
         self._config = self._load_config()

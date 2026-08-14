@@ -7,7 +7,7 @@ from cortex_claude.models.fact import Fact
 
 class FactRepository:
     def save(self, conn: sqlite3.Connection, fact: Fact) -> str:
-        existing = self._find_duplicate(conn, fact)
+        existing = self._find_duplicate(conn, fact, fact.scope)
         if existing:
             new_confidence = min(existing["confidence"] + 0.1, 1.0)
             conn.execute(
@@ -30,7 +30,7 @@ class FactRepository:
     def save_batch(self, conn: sqlite3.Connection, facts: list[Fact]) -> int:
         saved = 0
         for fact in facts:
-            existing = self._find_duplicate(conn, fact)
+            existing = self._find_duplicate(conn, fact, fact.scope)
             if existing:
                 new_confidence = min(existing["confidence"] + 0.1, 1.0)
                 temporal = fact.temporal or existing.get("temporal")
@@ -50,10 +50,10 @@ class FactRepository:
         conn.commit()
         return saved
 
-    def _find_duplicate(self, conn: sqlite3.Connection, fact: Fact) -> dict | None:
+    def _find_duplicate(self, conn: sqlite3.Connection, fact: Fact, scope: str) -> dict | None:
         row = conn.execute(
-            "SELECT id, confidence, temporal FROM facts WHERE LOWER(subject) = ? AND LOWER(relation) = ? AND LOWER(object) = ?",
-            (fact.subject.lower(), fact.relation.lower(), fact.object.lower()),
+            "SELECT id, confidence, temporal FROM facts WHERE LOWER(subject) = ? AND LOWER(relation) = ? AND LOWER(object) = ? AND scope = ?",
+            (fact.subject.lower(), fact.relation.lower(), fact.object.lower(), scope),
         ).fetchone()
         if row:
             return {"id": row["id"], "confidence": row["confidence"], "temporal": row["temporal"]}
@@ -107,10 +107,22 @@ class FactRepository:
         topic: str,
         relation: str | None = None,
         limit: int = 20,
+        scope: str | None = None,
     ) -> list[Fact]:
         topic_lower = f"%{topic.lower()}%"
 
-        if relation:
+        if relation and scope:
+            rows = conn.execute(
+                """
+                SELECT * FROM facts
+                WHERE (LOWER(subject) LIKE ? OR LOWER(object) LIKE ?)
+                AND LOWER(relation) = ? AND scope = ?
+                ORDER BY confidence DESC
+                LIMIT ?
+                """,
+                (topic_lower, topic_lower, relation.lower(), scope, limit),
+            ).fetchall()
+        elif relation:
             rows = conn.execute(
                 """
                 SELECT * FROM facts
@@ -120,6 +132,16 @@ class FactRepository:
                 LIMIT ?
                 """,
                 (topic_lower, topic_lower, relation.lower(), limit),
+            ).fetchall()
+        elif scope:
+            rows = conn.execute(
+                """
+                SELECT * FROM facts
+                WHERE (LOWER(subject) LIKE ? OR LOWER(object) LIKE ?) AND scope = ?
+                ORDER BY confidence DESC
+                LIMIT ?
+                """,
+                (topic_lower, topic_lower, scope, limit),
             ).fetchall()
         else:
             rows = conn.execute(
@@ -148,6 +170,33 @@ class FactRepository:
         conn.commit()
         return cursor.rowcount
 
+    def delete_by_source_file(self, conn: sqlite3.Connection, scope: str, path: str) -> int:
+        """Delete all code-graph facts for symbols defined in `path`.
+
+        Code facts have source_memory_id=NULL, so the only way to identify
+        "facts belonging to this file" is via the `defined_in` relation,
+        whose object is `path:line`. We first find the symbol names
+        (subjects) defined in this file, then delete every fact about those
+        subjects in this scope (defined_in, in_language, calls, extends,
+        imports) so re-indexing an edited file doesn't accumulate stale facts
+        for removed/renamed symbols.
+        """
+        subjects = conn.execute(
+            "SELECT DISTINCT subject FROM facts WHERE scope = ? AND relation = 'defined_in' AND object LIKE ?",
+            (scope, f"{path}:%"),
+        ).fetchall()
+        subject_names = [row[0] for row in subjects]
+        if not subject_names:
+            return 0
+
+        placeholders = ",".join("?" for _ in subject_names)
+        cursor = conn.execute(
+            f"DELETE FROM facts WHERE scope = ? AND subject IN ({placeholders})",
+            (scope, *subject_names),
+        )
+        conn.commit()
+        return cursor.rowcount
+
     def count(self, conn: sqlite3.Connection) -> int:
         row = conn.execute("SELECT COUNT(*) FROM facts").fetchone()
         return row[0]
@@ -160,19 +209,25 @@ class FactRepository:
             )
         conn.commit()
 
-    EXCLUSIVE_RELATIONS = {"be", "is", "defaults_to", "has_value", "located_in", "runs_on", "written_in"}
+    # Only relations that are genuinely 1-to-1 by nature. Relations like
+    # "runs_on"/"located_in"/"written_in" were removed: an entity can
+    # legitimately run on / be located in / be written in multiple things
+    # at once (multi-region deploy, polyglot project), so treating a new
+    # object as a contradiction of an old one there was penalizing valid,
+    # coexisting facts.
+    EXCLUSIVE_RELATIONS = {"be", "is", "defaults_to", "has_value"}
 
-    def detect_contradictions(self, conn: sqlite3.Connection, fact: Fact) -> list[Fact]:
+    def detect_contradictions(self, conn: sqlite3.Connection, fact: Fact, scope: str) -> list[Fact]:
         if fact.relation.lower() not in self.EXCLUSIVE_RELATIONS:
             return []
 
         rows = conn.execute(
             """
             SELECT * FROM facts
-            WHERE LOWER(subject) = ? AND LOWER(relation) = ? AND LOWER(object) != ?
+            WHERE LOWER(subject) = ? AND LOWER(relation) = ? AND LOWER(object) != ? AND scope = ?
             ORDER BY confidence DESC
             """,
-            (fact.subject.lower(), fact.relation.lower(), fact.object.lower()),
+            (fact.subject.lower(), fact.relation.lower(), fact.object.lower(), scope),
         ).fetchall()
         return [self._row_to_fact(row) for row in rows]
 

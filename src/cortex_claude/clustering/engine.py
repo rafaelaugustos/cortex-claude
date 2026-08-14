@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from cortex_claude.facts.normalizer import normalize_entity
 from cortex_claude.storage import ClusterRepository, MemoryRepository
 from cortex_claude.storage.fact_repo import FactRepository
 
@@ -44,8 +45,10 @@ class ClusterStats:
 
 
 def _cosine(a: np.ndarray, b: np.ndarray) -> float:
-    na = float(np.linalg.norm(a))
-    nb = float(np.linalg.norm(b))
+    return _cosine_with_norms(a, float(np.linalg.norm(a)), b, float(np.linalg.norm(b)))
+
+
+def _cosine_with_norms(a: np.ndarray, na: float, b: np.ndarray, nb: float) -> float:
     if na == 0 or nb == 0:
         return 0.0
     return float(np.dot(a, b) / (na * nb))
@@ -60,6 +63,14 @@ class ClusteringEngine:
       - Else: create new cluster seeded by this memory's embedding.
 
     Labels are derived from the most frequent subjects/objects in the cluster's facts.
+
+    Note: clustering is append-only. A memory is only ever considered while
+    its `cluster_id` is NULL, so once assigned it never migrates even if a
+    better-fitting cluster appears later. Memories are processed in a fixed
+    `created_at ASC` order so repeated runs over the same data are
+    deterministic. To force a full re-clustering (e.g. after tuning
+    `similarity_threshold`), use `cortex_clusters action="backfill"`, which
+    resets all assignments in the scope before re-running.
     """
 
     def __init__(
@@ -85,17 +96,23 @@ class ClusteringEngine:
             return stats
 
         existing = self._clusters.list_for_scope(conn, scope)
-        centroids: list[tuple[int, np.ndarray, int]] = [
-            (c.id, c.centroid, c.member_count) for c in existing if c.centroid is not None
+        # (id, centroid, precomputed norm, member_count) — norm is cached so
+        # comparing the same centroid against many memories in this round
+        # doesn't recompute np.linalg.norm(centroid) every time.
+        centroids: list[tuple[int, np.ndarray, float, int]] = [
+            (c.id, c.centroid, float(np.linalg.norm(c.centroid)), c.member_count)
+            for c in existing
+            if c.centroid is not None
         ]
 
         assignments: list[tuple[str, int]] = []
         touched_clusters: set[int] = set()
 
         for memory_id, emb in unclustered:
+            emb_norm = float(np.linalg.norm(emb))
             best_id, best_sim = None, -1.0
-            for cid, centroid, _ in centroids:
-                sim = _cosine(emb, centroid)
+            for cid, centroid, centroid_norm, _ in centroids:
+                sim = _cosine_with_norms(emb, emb_norm, centroid, centroid_norm)
                 if sim > best_sim:
                     best_sim = sim
                     best_id = cid
@@ -103,14 +120,14 @@ class ClusteringEngine:
             if best_id is not None and best_sim >= self.config.similarity_threshold:
                 cluster_id = best_id
                 idx = next(i for i, c in enumerate(centroids) if c[0] == cluster_id)
-                cid, centroid, count = centroids[idx]
+                cid, centroid, _, count = centroids[idx]
                 new_count = count + 1
                 new_centroid = (centroid * count + emb) / new_count
-                centroids[idx] = (cid, new_centroid, new_count)
+                centroids[idx] = (cid, new_centroid, float(np.linalg.norm(new_centroid)), new_count)
                 stats.assigned += 1
             else:
                 cluster_id = self._clusters.create(conn, scope=scope, centroid=emb)
-                centroids.append((cluster_id, emb.copy(), 1))
+                centroids.append((cluster_id, emb.copy(), emb_norm, 1))
                 stats.new_clusters += 1
 
             assignments.append((memory_id, cluster_id))
@@ -118,7 +135,7 @@ class ClusteringEngine:
 
         self._memories.set_cluster_batch(conn, assignments)
 
-        for cid, centroid, count in centroids:
+        for cid, centroid, _, count in centroids:
             if cid in touched_clusters:
                 self._clusters.update_centroid(conn, cid, centroid, member_count=count)
 
@@ -151,7 +168,7 @@ class ClusteringEngine:
             for token in (subject, obj):
                 if not token:
                     continue
-                t = token.strip().lower()
+                t = normalize_entity(token)
                 if len(t) < 3:
                     continue
                 if " " in t and len(t.split()) > 3:

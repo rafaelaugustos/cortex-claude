@@ -37,6 +37,66 @@ async def test_forget_no_match(engine: CortexEngine):
 
 
 @pytest.mark.asyncio
+async def test_forget_reports_deletions_grouped_by_actual_scope(engine: CortexEngine, tmp_path):
+    """Regression: previously `target_scope` was overwritten on every match
+    in the scope-search loop, so the report reflected only the
+    last-iterated scope instead of where memories actually were deleted
+    from. Configure two directories mapped to two different scopes so a
+    single forget() call (scope=None) resolves and searches both, then
+    verify the report attributes each deletion to its real scope."""
+    dir_a = tmp_path / "repo_a"
+    dir_b = tmp_path / "repo_b"
+    dir_a.mkdir()
+    dir_b.mkdir()
+
+    await engine.manage_scopes(action="link", name="project:a", path=str(dir_a))
+    await engine.manage_scopes(action="link", name="project:b", path=str(dir_b))
+
+    a = await engine.save(content="Alpha project secret sauce", scope="project:a")
+    b = await engine.save(content="Beta project secret recipe", scope="project:b")
+
+    # cwd=dir_a resolves to ["project:a", "global"] only — forget with an
+    # explicit memory_id still must search across whichever scopes resolve,
+    # and correctly report which scope the deleted memory came from.
+    result = await engine.forget(memory_id=a.memory_id, scope=None, cwd=str(dir_a), dry_run=False)
+    assert result.deleted == [a.memory_id]
+    assert result.deleted_by_scope == {"project:a": [a.memory_id]}
+
+    result_b = await engine.forget(memory_id=b.memory_id, scope=None, cwd=str(dir_b), dry_run=False)
+    assert result_b.deleted_by_scope == {"project:b": [b.memory_id]}
+
+
+@pytest.mark.asyncio
+async def test_forget_updates_cluster_member_count(engine: CortexEngine):
+    from cortex_claude.clustering import ClusteringConfig, ClusteringEngine
+
+    # Distinct-enough contents to avoid triggering save-time dedup merging,
+    # which would collapse these into fewer memories than expected.
+    texts = [
+        "The billing service charges customers monthly via Stripe",
+        "The billing service reconciles invoices with the accounting ledger",
+        "The billing service sends dunning emails for failed payments",
+    ]
+    ids = []
+    for text in texts:
+        r = await engine.save(content=text, scope="global")
+        ids.append(r.memory_id)
+
+    conn = engine.get_scope_connection("global")
+    ClusteringEngine(ClusteringConfig(similarity_threshold=0.3)).cluster_scope(conn, "global")
+
+    clusters_before = await engine.list_clusters(scope="global")
+    assert clusters_before, "expected at least one cluster to have formed"
+    total_before = sum(c["member_count"] for c in clusters_before)
+
+    await engine.forget(memory_id=ids[0], dry_run=False)
+
+    clusters_after = await engine.list_clusters(scope="global")
+    total_after = sum(c["member_count"] for c in clusters_after)
+    assert total_after == total_before - 1
+
+
+@pytest.mark.asyncio
 async def test_scopes_list(engine: CortexEngine):
     await engine.save(content="Global memory", scope="global")
     await engine.save(content="Project memory", scope="project:test")

@@ -92,10 +92,18 @@ class MemoryRepository:
         )
         conn.commit()
 
-    def delete(self, conn: sqlite3.Connection, memory_id: str) -> None:
+    def delete(self, conn: sqlite3.Connection, memory_id: str) -> int | None:
+        """Delete a memory and its vector. Returns the cluster_id it belonged
+        to (if any) so callers can update cluster bookkeeping (member_count)."""
+        row = conn.execute(
+            "SELECT cluster_id FROM memories WHERE id = ?", (memory_id,)
+        ).fetchone()
+        cluster_id = row[0] if row else None
+
         conn.execute("DELETE FROM memory_vectors WHERE id = ?", (memory_id,))
         conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
         conn.commit()
+        return cluster_id
 
     def search_fts(
         self,
@@ -152,12 +160,14 @@ class MemoryRepository:
                 FROM memories m
                 JOIN memory_vectors v ON v.id = m.id
                 WHERE m.cluster_id IS NULL
+                ORDER BY m.created_at ASC
             """
         else:
             sql = """
                 SELECT m.id, v.embedding
                 FROM memories m
                 JOIN memory_vectors v ON v.id = m.id
+                ORDER BY m.created_at ASC
             """
         out: list[tuple[str, np.ndarray]] = []
         for row in conn.execute(sql).fetchall():

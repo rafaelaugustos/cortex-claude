@@ -26,7 +26,7 @@ from cortex_claude.summarizer import summarize
 @dataclass
 class ForgetResult:
     deleted: list[str]
-    scope: str
+    deleted_by_scope: dict[str, list[str]]
     dry_run: bool
 
 
@@ -81,9 +81,15 @@ class CortexEngine:
         embedding = self._embeddings.embed(content)
         tokens = count_tokens(content)
 
-        existing = self._memory_repo.search_by_vector(conn, embedding, limit=1)
-        if existing and existing[0][1] >= self._config.dedup_similarity_threshold:
-            existing_memory = self._memory_repo.get(conn, existing[0][0])
+        # Check top-3 nearest neighbors, not just the closest one: KNN
+        # tie-breaking means a near-duplicate isn't always returned first.
+        candidates = self._memory_repo.search_by_vector(conn, embedding, limit=3)
+        dup_candidate = next(
+            (c for c in candidates if c[1] >= self._config.dedup_similarity_threshold),
+            None,
+        )
+        if dup_candidate:
+            existing_memory = self._memory_repo.get(conn, dup_candidate[0])
             if existing_memory:
                 merged = f"{existing_memory.content}\n\n{content}"
                 self._fact_repo.delete_by_memory(conn, existing_memory.id)
@@ -114,7 +120,7 @@ class CortexEngine:
             fact.scope = write_scope
         if facts:
             for fact in facts:
-                contradictions = self._fact_repo.detect_contradictions(conn, fact)
+                contradictions = self._fact_repo.detect_contradictions(conn, fact, write_scope)
                 if contradictions:
                     self._fact_repo.penalize(conn, [c.id for c in contradictions])
             self._fact_repo.save_batch(conn, facts)
@@ -172,7 +178,7 @@ class CortexEngine:
 
         for s in scopes:
             conn = self._storage.get_database(s)
-            facts = self._fact_repo.search(conn, topic, relation, limit)
+            facts = self._fact_repo.search(conn, topic, relation, limit, scope=s)
             all_facts.extend(facts)
             if facts:
                 self._fact_repo.boost_accessed(conn, [f.id for f in facts])
@@ -209,7 +215,7 @@ class CortexEngine:
 
                 for s in scopes:
                     conn = self._storage.get_database(s)
-                    facts = self._fact_repo.search(conn, entity, limit=20)
+                    facts = self._fact_repo.search(conn, entity, limit=20, scope=s)
                     for fact in facts:
                         result.append(fact)
                         if fact.subject.lower() not in visited:
@@ -326,7 +332,7 @@ class CortexEngine:
                     items.append(RecallItem(
                         memory_id=fact.source_memory_id,
                         content=text,
-                        score=(vec_score + fact.confidence) * decay,
+                        score=(vec_score * 0.5 + fact.confidence * 0.5) * decay,
                         scope=fact.scope,
                         created_at=fact.created_at,
                     ))
@@ -356,28 +362,32 @@ class CortexEngine:
                         created_at=fact.created_at,
                     ))
 
-            # Keyword search on fact table directly
-            for word in query.lower().split():
-                if len(word) < 3:
-                    continue
-                keyword_facts = self._fact_repo.search(conn, word, limit=5)
-                for fact in keyword_facts:
-                    fact_key = f"{fact.subject}|{fact.relation}|{fact.object}"
-                    if fact_key in seen_facts:
+            # Keyword search on fact table directly. This is a fallback: it's
+            # an unindexed LIKE '%word%' scan (see note in _recall_facts
+            # docstring below), so only run it when vector + FTS found
+            # nothing — in most queries they already cover recall.
+            if not vector_results and not fts_ids:
+                for word in query.lower().split():
+                    if len(word) < 3:
                         continue
-                    seen_facts.add(fact_key)
+                    keyword_facts = self._fact_repo.search(conn, word, limit=5, scope=s)
+                    for fact in keyword_facts:
+                        fact_key = f"{fact.subject}|{fact.relation}|{fact.object}"
+                        if fact_key in seen_facts:
+                            continue
+                        seen_facts.add(fact_key)
 
-                    text = f"{fact.subject} → {fact.relation} → {fact.object}"
-                    tokens = count_tokens(text)
-                    if not budget.consume(tokens):
-                        return items
-                    items.append(RecallItem(
-                        memory_id=fact.source_memory_id,
-                        content=text,
-                        score=fact.confidence,
-                        scope=fact.scope,
-                        created_at=fact.created_at,
-                    ))
+                        text = f"{fact.subject} → {fact.relation} → {fact.object}"
+                        tokens = count_tokens(text)
+                        if not budget.consume(tokens):
+                            return items
+                        items.append(RecallItem(
+                            memory_id=fact.source_memory_id,
+                            content=text,
+                            score=fact.confidence,
+                            scope=fact.scope,
+                            created_at=fact.created_at,
+                        ))
 
         return items
 
@@ -580,34 +590,65 @@ class CortexEngine:
         dry_run: bool = True,
         cwd: str = ".",
     ) -> ForgetResult:
+        """Delete memories by id or semantic query.
+
+        Note: deleting a clustered memory updates the owning cluster's
+        member_count (via recount_members) but does not recompute its
+        centroid — the centroid drifts slightly stale until the next
+        `cortex_clusters action="backfill"`. Recomputing it on every forget
+        would require re-reading every remaining member's embedding, which
+        is too expensive to do per-delete.
+        """
         scopes = [scope] if scope else self._scope_manager.resolve(cwd)
-        target_scope = scopes[0]
+        # candidate_scope tracks, per to-be-deleted memory id, which scope it
+        # was found in — so the final report is accurate per scope instead of
+        # collapsing to whichever scope happened to be iterated last.
+        candidate_scope: dict[str, str] = {}
         to_delete: list[str] = []
 
         if memory_id:
             to_delete = [memory_id]
+            for s in scopes:
+                conn = self._storage.get_database(s)
+                if self._memory_repo.get(conn, memory_id):
+                    candidate_scope[memory_id] = s
+                    break
         elif query:
             query_embedding = self._embeddings.embed(query)
             for s in scopes:
                 conn = self._storage.get_database(s)
                 results = self._memory_repo.search_by_vector(conn, query_embedding, limit=5)
                 for mid, score in results:
-                    if score > 0.3:
+                    if score > 0.3 and mid not in candidate_scope:
                         to_delete.append(mid)
-                        target_scope = s
+                        candidate_scope[mid] = s
 
+        deleted_by_scope: dict[str, list[str]] = {}
         if not dry_run:
+            touched_cluster_scopes: set[str] = set()
             for mid in to_delete:
-                for s in scopes:
-                    conn = self._storage.get_database(s)
-                    memory = self._memory_repo.get(conn, mid)
-                    if memory:
-                        self._fact_repo.delete_by_memory(conn, mid)
-                        self._memory_repo.delete(conn, mid)
-                        target_scope = s
-                        break
+                s = candidate_scope.get(mid)
+                if s is None:
+                    continue
+                conn = self._storage.get_database(s)
+                memory = self._memory_repo.get(conn, mid)
+                if memory:
+                    self._fact_repo.delete_by_memory(conn, mid)
+                    cluster_id = self._memory_repo.delete(conn, mid)
+                    deleted_by_scope.setdefault(s, []).append(mid)
+                    if cluster_id is not None:
+                        touched_cluster_scopes.add(s)
 
-        return ForgetResult(deleted=to_delete, scope=target_scope, dry_run=dry_run)
+            for s in touched_cluster_scopes:
+                conn = self._storage.get_database(s)
+                self._cluster_repo.recount_members(conn, s)
+        else:
+            for mid in to_delete:
+                s = candidate_scope.get(mid)
+                if s is not None:
+                    deleted_by_scope.setdefault(s, []).append(mid)
+
+        return ForgetResult(deleted=to_delete, deleted_by_scope=deleted_by_scope, dry_run=dry_run)
 
     async def manage_scopes(
         self,

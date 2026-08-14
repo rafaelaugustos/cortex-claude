@@ -23,9 +23,11 @@ async def handle_forget(
         return "No matching memories found to delete."
 
     action = "Would delete" if result.dry_run else "Deleted"
-    lines = [f"{action} {len(result.deleted)} memory(s) from scope '{result.scope}':"]
-    for mid in result.deleted:
-        lines.append(f"  - {mid}")
+    lines = [f"{action} {len(result.deleted)} memory(s):"]
+    for s, ids in result.deleted_by_scope.items():
+        lines.append(f"  scope '{s}':")
+        for mid in ids:
+            lines.append(f"    - {mid}")
 
     if result.dry_run:
         lines.append("\nThis is a dry run. Set dry_run=false to actually delete.")

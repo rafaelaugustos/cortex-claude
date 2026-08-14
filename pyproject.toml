@@ -4,7 +4,7 @@ version = "0.6.0"
 description = "Local-first, token-efficient memory system for Claude Code via MCP"
 readme = "README.md"
 license = { text = "MIT" }
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 authors = [
     { name = "Rafael Augusto" },
 ]
@@ -21,7 +21,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
 ]
 dependencies = [
-    "mcp>=1.0.0",
+    "mcp>=1.0.0,<2.0.0",
     "sentence-transformers>=3.0.0",
     "sqlite-vec>=0.1.6",
     "tiktoken>=0.7.0",

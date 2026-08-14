@@ -65,6 +65,8 @@ CORTEX_HOME="${CORTEX_HOME:-$HOME/.cortex-claude}"
 GLOBAL_DB="$CORTEX_HOME/global.db"
 SOCKET="$CORTEX_HOME/cortex.sock"
 
+INPUT=$(cat)
+
 if [ ! -S "$SOCKET" ]; then
   python3 -c "
 import sys
@@ -76,6 +78,33 @@ except Exception:
     pass
 " 2>/dev/null &
 fi
+
+# Fire-and-forget: ask the daemon to index the whole project into the code
+# graph if it hasn't been indexed yet (see CortexDaemon._maybe_index_project).
+# Doesn't block session start — no response is read back.
+(echo "$INPUT" | python3 -c "
+import json, socket, sys, os
+
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+
+cwd = data.get('cwd')
+if not cwd:
+    sys.exit(0)
+
+sock_path = os.path.expanduser('$SOCKET')
+try:
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.settimeout(2)
+    s.connect(sock_path)
+    s.sendall(json.dumps({'action': 'index_project', 'cwd': cwd}).encode())
+    s.shutdown(socket.SHUT_WR)
+    s.close()
+except Exception:
+    pass
+" 2>/dev/null) &
 
 [ ! -f "$GLOBAL_DB" ] && exit 0
 
@@ -145,6 +174,63 @@ if [ -n "$CONTEXT" ]; then
     }
   }'
 fi
+
+exit 0
+'''
+
+PRE_TOOL_USE_HOOK = '''#!/bin/bash
+# Cortex Claude — PreToolUse hook (Bash only)
+# Rewrites a small set of known-verbose git/ls commands to compact,
+# information-equivalent flags before execution, to reduce the tokens the
+# agent has to read. This only rewrites *exact known patterns* it recognizes
+# as safe (no flags that would change semantics) — anything else passes
+# through unmodified. It never blocks or denies; worst case is a no-op.
+
+INPUT=$(cat)
+
+python3 -c "
+import json, sys
+
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+
+if data.get('tool_name') != 'Bash':
+    sys.exit(0)
+
+ti = data.get('tool_input', {}) or {}
+cmd = ti.get('command', '')
+if not isinstance(cmd, str):
+    sys.exit(0)
+
+stripped = cmd.strip()
+
+# (exact command or bare prefix with no args) -> compact replacement.
+# Conservative on purpose: only rewrite when we recognize the *whole*
+# command, so we never clobber flags the caller already chose.
+REWRITES = {
+    'git status': 'git status --short --branch',
+    'git log': 'git log --oneline -n 20',
+    'git diff': 'git diff --stat',
+    'git branch': 'git branch --list',
+}
+
+new_cmd = REWRITES.get(stripped)
+if new_cmd is None or new_cmd == stripped:
+    sys.exit(0)
+
+updated_input = dict(ti)
+updated_input['command'] = new_cmd
+
+print(json.dumps({
+    'hookSpecificOutput': {
+        'hookEventName': 'PreToolUse',
+        'permissionDecision': 'allow',
+        'updatedInput': updated_input,
+    }
+}))
+" <<< "$INPUT"
 
 exit 0
 '''
@@ -278,112 +364,174 @@ def _skip(msg: str) -> None:
     print(f"  [skip] {msg}")
 
 
+def _fail(msg: str) -> None:
+    print(f"  [FAIL] {msg}")
+
+
 def run_setup() -> None:
     print()
     print("  Cortex Claude Setup")
     print("  ====================")
     print()
 
+    # Tracks (step_name, ok, detail) for every step below, so the summary
+    # at the end can tell the user exactly what worked and what didn't
+    # instead of silently swallowing failures — this is what made it hard
+    # for users to tell why an install "didn't work".
+    results: list[tuple[str, bool, str]] = []
+
     # 1. Create data directory
-    CORTEX_HOME.mkdir(parents=True, exist_ok=True)
-    (CORTEX_HOME / "scopes").mkdir(exist_ok=True)
-    _ok(f"Data directory: {CORTEX_HOME}")
+    try:
+        CORTEX_HOME.mkdir(parents=True, exist_ok=True)
+        (CORTEX_HOME / "scopes").mkdir(exist_ok=True)
+        _ok(f"Data directory: {CORTEX_HOME}")
+        results.append(("Data directory", True, ""))
+    except Exception as e:
+        _fail(f"Data directory: {e}")
+        results.append(("Data directory", False, str(e)))
 
     # 2. Install hooks
-    HOOKS_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        HOOKS_DIR.mkdir(parents=True, exist_ok=True)
 
-    session_start = HOOKS_DIR / "session-start.sh"
-    session_start.write_text(SESSION_START_HOOK)
-    session_start.chmod(session_start.stat().st_mode | stat.S_IEXEC)
+        session_start = HOOKS_DIR / "session-start.sh"
+        session_start.write_text(SESSION_START_HOOK)
+        session_start.chmod(session_start.stat().st_mode | stat.S_IEXEC)
 
-    post_tool_use = HOOKS_DIR / "post-tool-use.sh"
-    post_tool_use.write_text(POST_TOOL_USE_HOOK)
-    post_tool_use.chmod(post_tool_use.stat().st_mode | stat.S_IEXEC)
+        pre_tool_use = HOOKS_DIR / "pre-tool-use.sh"
+        pre_tool_use.write_text(PRE_TOOL_USE_HOOK)
+        pre_tool_use.chmod(pre_tool_use.stat().st_mode | stat.S_IEXEC)
 
-    _ok(f"Hooks installed: {HOOKS_DIR}")
+        post_tool_use = HOOKS_DIR / "post-tool-use.sh"
+        post_tool_use.write_text(POST_TOOL_USE_HOOK)
+        post_tool_use.chmod(post_tool_use.stat().st_mode | stat.S_IEXEC)
+
+        _ok(f"Hooks installed: {HOOKS_DIR}")
+        results.append(("Hooks installed", True, ""))
+    except Exception as e:
+        _fail(f"Hooks installed: {e}")
+        results.append(("Hooks installed", False, str(e)))
+        session_start = HOOKS_DIR / "session-start.sh"
+        pre_tool_use = HOOKS_DIR / "pre-tool-use.sh"
+        post_tool_use = HOOKS_DIR / "post-tool-use.sh"
 
     # 3. Configure Claude Code MCP (global)
-    mcp_config = {}
-    if CLAUDE_CONFIG.exists():
-        try:
-            with open(CLAUDE_CONFIG) as f:
-                mcp_config = json.load(f)
-        except json.JSONDecodeError:
-            mcp_config = {}
+    try:
+        mcp_config = {}
+        if CLAUDE_CONFIG.exists():
+            try:
+                with open(CLAUDE_CONFIG) as f:
+                    mcp_config = json.load(f)
+            except json.JSONDecodeError:
+                mcp_config = {}
 
-    mcp_config.setdefault("mcpServers", {})["cortex"] = {
-        "type": "stdio",
-        "command": "python3",
-        "args": ["-m", "cortex_claude"],
-    }
+        # Use the installed `cortex-claude` binary directly rather than
+        # "python3 -m cortex_claude": when installed via `uv tool install`
+        # (or any isolated venv), the system's bare `python3` may not have
+        # cortex_claude importable at all — it lives in the tool's own
+        # venv. shutil.which resolves the absolute path so Claude Code
+        # doesn't depend on PATH resolution at MCP launch time.
+        cortex_bin = shutil.which("cortex-claude") or "cortex-claude"
+        mcp_config.setdefault("mcpServers", {})["cortex"] = {
+            "type": "stdio",
+            "command": cortex_bin,
+            "args": [],
+        }
 
-    with open(CLAUDE_CONFIG, "w") as f:
-        json.dump(mcp_config, f, indent=2)
+        with open(CLAUDE_CONFIG, "w") as f:
+            json.dump(mcp_config, f, indent=2)
 
-    _ok(f"MCP server configured: {CLAUDE_CONFIG}")
+        _ok(f"MCP server configured: {CLAUDE_CONFIG}")
+        results.append(("MCP server configured", True, ""))
+    except Exception as e:
+        _fail(f"MCP server configured: {e}")
+        results.append(("MCP server configured", False, str(e)))
 
     # 4. Configure hooks in Claude settings (global)
-    CLAUDE_SETTINGS.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        CLAUDE_SETTINGS.parent.mkdir(parents=True, exist_ok=True)
 
-    settings = {}
-    if CLAUDE_SETTINGS.exists():
-        try:
-            with open(CLAUDE_SETTINGS) as f:
-                settings = json.load(f)
-        except json.JSONDecodeError:
-            settings = {}
+        settings = {}
+        if CLAUDE_SETTINGS.exists():
+            try:
+                with open(CLAUDE_SETTINGS) as f:
+                    settings = json.load(f)
+            except json.JSONDecodeError:
+                settings = {}
 
-    hooks = settings.setdefault("hooks", {})
+        hooks = settings.setdefault("hooks", {})
 
-    hooks["SessionStart"] = [
-        {
-            "matcher": "",
-            "hooks": [
-                {
-                    "type": "command",
-                    "command": str(session_start),
-                    "timeout": 10,
-                }
-            ],
-        }
-    ]
+        hooks["SessionStart"] = [
+            {
+                "matcher": "",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": str(session_start),
+                        "timeout": 10,
+                    }
+                ],
+            }
+        ]
 
-    hooks["PostToolUse"] = [
-        {
-            "matcher": "",
-            "hooks": [
-                {
-                    "type": "command",
-                    "command": str(post_tool_use),
-                    "async": True,
-                    "timeout": 30,
-                }
-            ],
-        }
-    ]
+        hooks["PreToolUse"] = [
+            {
+                "matcher": "Bash",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": str(pre_tool_use),
+                        "timeout": 5,
+                    }
+                ],
+            }
+        ]
 
-    with open(CLAUDE_SETTINGS, "w") as f:
-        json.dump(settings, f, indent=2)
+        hooks["PostToolUse"] = [
+            {
+                "matcher": "",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": str(post_tool_use),
+                        "async": True,
+                        "timeout": 30,
+                    }
+                ],
+            }
+        ]
 
-    _ok(f"Hooks configured: {CLAUDE_SETTINGS}")
+        with open(CLAUDE_SETTINGS, "w") as f:
+            json.dump(settings, f, indent=2)
+
+        _ok(f"Hooks configured: {CLAUDE_SETTINGS}")
+        results.append(("Hooks configured in settings.json", True, ""))
+    except Exception as e:
+        _fail(f"Hooks configured: {e}")
+        results.append(("Hooks configured in settings.json", False, str(e)))
 
     # 5. Create/update CLAUDE.md
-    CLAUDE_MD.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        CLAUDE_MD.parent.mkdir(parents=True, exist_ok=True)
 
-    cortex_marker = "# Cortex Memory"
-    if CLAUDE_MD.exists():
-        existing = CLAUDE_MD.read_text()
-        if cortex_marker in existing:
-            _skip(f"CLAUDE.md already has Cortex instructions")
+        cortex_marker = "# Cortex Memory"
+        if CLAUDE_MD.exists():
+            existing = CLAUDE_MD.read_text()
+            if cortex_marker in existing:
+                _skip(f"CLAUDE.md already has Cortex instructions")
+            else:
+                with open(CLAUDE_MD, "a") as f:
+                    f.write("\n\n" + CLAUDE_MD_CONTENT)
+                _ok(f"Cortex instructions appended to {CLAUDE_MD}")
         else:
-            with open(CLAUDE_MD, "a") as f:
-                f.write("\n\n" + CLAUDE_MD_CONTENT)
-            _ok(f"Cortex instructions appended to {CLAUDE_MD}")
-    else:
-        CLAUDE_MD.write_text(CLAUDE_MD_CONTENT)
-        _ok(f"CLAUDE.md created: {CLAUDE_MD}")
+            CLAUDE_MD.write_text(CLAUDE_MD_CONTENT)
+            _ok(f"CLAUDE.md created: {CLAUDE_MD}")
+        results.append(("CLAUDE.md instructions", True, ""))
+    except Exception as e:
+        _fail(f"CLAUDE.md instructions: {e}")
+        results.append(("CLAUDE.md instructions", False, str(e)))
 
-    # 7. Download spaCy model
+    # 6. Download spaCy model
     _print("Downloading spaCy model (en_core_web_sm)...")
     try:
         import spacy
@@ -391,34 +539,71 @@ def run_setup() -> None:
             spacy.load("en_core_web_sm")
             _skip("spaCy model already installed")
         except OSError:
-            subprocess.run(
+            proc = subprocess.run(
                 [sys.executable, "-m", "spacy", "download", "en_core_web_sm"],
                 capture_output=True,
+                text=True,
             )
+            if proc.returncode != 0:
+                raise RuntimeError(proc.stderr.strip()[-500:] or "spacy download failed")
             _ok("spaCy model downloaded")
+        results.append(("spaCy model (en_core_web_sm)", True, ""))
     except ImportError:
-        _print("spaCy not installed, skipping model download")
+        _fail("spaCy not installed — fact extraction will be degraded")
+        results.append(("spaCy model (en_core_web_sm)", False, "spacy not importable"))
+    except Exception as e:
+        _fail(f"spaCy model download: {e}")
+        results.append(("spaCy model (en_core_web_sm)", False, str(e)))
 
-    # 8. Pre-warm embedding model
+    # 7. Pre-warm embedding model
     _print("Downloading embedding model (all-MiniLM-L6-v2)...")
     try:
         from sentence_transformers import SentenceTransformer
         SentenceTransformer("all-MiniLM-L6-v2")
         _ok("Embedding model ready")
+        results.append(("Embedding model (all-MiniLM-L6-v2)", True, ""))
     except Exception as e:
-        _print(f"Could not pre-load embedding model: {e}")
+        _fail(f"Embedding model download: {e}")
+        results.append(("Embedding model (all-MiniLM-L6-v2)", False, str(e)))
 
-    # 9. Start daemon
+    # 8. Start daemon
     _print("Starting Cortex daemon...")
     try:
         from cortex_claude.daemon import ensure_running, is_running
         ensure_running()
         if is_running():
             _ok("Daemon running")
+            results.append(("Background daemon", True, ""))
         else:
             _print("Daemon may take a few seconds to start")
+            results.append(("Background daemon", True, "starting"))
     except Exception as e:
-        _print(f"Could not start daemon: {e}")
+        _fail(f"Daemon start: {e}")
+        results.append(("Background daemon", False, str(e)))
+
+    # Summary
+    print()
+    failed = [(name, detail) for name, ok, detail in results if not ok]
+    spacy_failed = any(name.startswith("spaCy model") and not ok for name, ok, _ in results)
+    embedding_failed = any(name.startswith("Embedding model") and not ok for name, ok, _ in results)
+    print(f"  Setup finished: {len(results) - len(failed)}/{len(results)} steps OK")
+    if failed:
+        print()
+        print("  Failed steps:")
+        for name, detail in failed:
+            print(f"    - {name}: {detail}")
+        print()
+        print("  cortex-claude setup is safe to re-run after fixing the issue above.")
+        if spacy_failed or embedding_failed:
+            print()
+            print("  Model downloads most commonly fail due to network/proxy/firewall")
+            print("  restrictions. You can retry just the failed step(s) manually:")
+            if spacy_failed:
+                print("    uv run python -m spacy download en_core_web_sm")
+            if embedding_failed:
+                print("    uv run python -c \"from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')\"")
+        print()
+        return
 
     # Done
     print()

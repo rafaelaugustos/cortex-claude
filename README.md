@@ -98,38 +98,56 @@ The system stops at the cheapest layer that answers the question. **66% fewer to
 
 ## Quick Start
 
-### One-Command Install
+### One-Command Install (recommended)
+
+Cortex depends on spaCy and PyTorch, which don't have wheels for every Python version — installing with whatever `python3`/`pip` happens to be on your PATH is the most common source of install failures (cryptic compilation errors, version conflicts with other packages). [`uv`](https://docs.astral.sh/uv/) sidesteps this entirely: it downloads and manages an isolated, compatible Python interpreter for you, with zero manual version wrangling.
+
+```bash
+# Install uv if you don't have it yet (one-time, ~5s)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Install cortex-claude — uv picks a compatible Python automatically,
+# fully isolated from your system Python. No version conflicts.
+uv tool install cortex-claude --python 3.12
+cortex-claude setup
+```
+
+That's it. The setup command:
+- Configures the MCP server globally for Claude Code
+- Installs hooks (SessionStart, PreToolUse, PostToolUse)
+- Creates `~/.claude/CLAUDE.md` with instructions for Claude to use Cortex automatically
+- Downloads the embedding model (~80MB) and spaCy model (~12MB)
+- Starts the background daemon for instant saves
+- Prints a clear pass/fail summary for every step, and is safe to re-run if anything failed (e.g. a model download blocked by a proxy/firewall)
+
+Restart Claude Code and it works in **every project**, no per-project config needed. Claude will automatically consult Cortex before saying "I don't know" and save important context to memory.
+
+### Alternative: pip
 
 ```bash
 pip install cortex-claude && cortex-claude setup
 ```
 
-That's it. The setup command:
-- Configures the MCP server globally for Claude Code
-- Installs auto-capture hooks (SessionStart + PostToolUse)
-- Creates `~/.claude/CLAUDE.md` with instructions for Claude to use Cortex automatically
-- Downloads the embedding model (~80MB) and spaCy model (~12MB)
-- Starts the background daemon for instant saves
-
-Restart Claude Code and it works in **every project**, no per-project config needed. Claude will automatically consult Cortex before saying "I don't know" and save important context to memory.
+Requires Python 3.11&ndash;3.13 available as `pip`'s interpreter. If you hit install errors (common causes: a Python 3.14+ system interpreter, or a `pip` that resolves to a version without spaCy/PyTorch wheels), use the `uv tool install` method above instead &mdash; it manages the Python version for you.
 
 ### With Claude-assisted extraction (optional)
 
 ```bash
 pip install cortex-claude[claude]
+# or: uv tool install cortex-claude[claude] --python 3.12
 ```
 
 ### Manual Setup (alternative)
 
-If you prefer manual configuration, add a `.mcp.json` to your project root:
+If you prefer manual configuration, add a `.mcp.json` to your project root, pointing `command` at wherever `cortex-claude` was installed (run `which cortex-claude` to find it):
 
 ```json
 {
   "mcpServers": {
     "cortex": {
       "type": "stdio",
-      "command": "python3",
-      "args": ["-m", "cortex_claude"]
+      "command": "cortex-claude",
+      "args": []
     }
   }
 }
@@ -225,7 +243,8 @@ Recalculated on server startup. Frequently accessed memories get boosted. Stale 
 
 Cortex uses Claude Code hooks to work automatically:
 
-- **SessionStart** &mdash; injects memory stats and known facts when you open a session. Claude knows it has memory and consults it before saying "I don't know".
+- **SessionStart** &mdash; injects memory stats and known facts when you open a session. Claude knows it has memory and consults it before saying "I don't know". It also fires a fire-and-forget request to the daemon to index the whole current project into the code graph (`cortex_index_code`-equivalent scan, capped at 2000 files) if that scope hasn't been indexed yet &mdash; so the first question about an unfamiliar codebase can often be answered via `cortex_code(symbol)` instead of exploratory Read/Grep. Runs once per project: subsequent sessions skip the scan and rely on the incremental Read/Edit indexing to keep it fresh. If no scope is explicitly linked for the project directory, indexing uses an auto-derived `project:<dir-name>` scope rather than polluting `global`.
+- **PreToolUse** (Bash only) &mdash; rewrites a small, conservative set of known-verbose commands to compact, semantically-equivalent flags before execution (e.g. `git status` &rarr; `git status --short --branch`, `git log` &rarr; `git log --oneline -n 20`). Only rewrites exact recognized patterns; a command that already has custom flags passes through untouched. This reduces tokens the agent has to read from command output itself &mdash; complementary to, not a replacement for, memory capture.
 - **PostToolUse** &mdash; captures results from **all tools** in background: Bash, Read, Edit, Write, Grep, Glob, Agent, WebSearch, WebFetch, and all third-party MCP tools. Code files (Python, JS/TS, Go, Java, Swift, Kotlin) trigger an additional `index_code` step that extracts symbols into the code graph.
 - **Capture filter** &mdash; before persisting, every auto-captured save passes through a heuristic gate (size, signal keywords, tool type, entity density). `ls`, trivial reads, and noisy edits are dropped. Ambiguous cases can optionally consult an LLM judge.
 - **Background Daemon** &mdash; keeps the embedding model pre-loaded via Unix socket. First save after boot: ~5s (model load). Subsequent saves: **~0.3s**. On the first startup after upgrading to v0.6.0 (schema v7), the daemon auto-backfills clusters for any scope with memories but no clusters yet.
@@ -362,6 +381,12 @@ Run benchmarks yourself:
 ```bash
 uv run python scripts/benchmark.py
 ```
+
+### How Token Counts Work
+
+The percentages and token counts above are **estimates, not exact Claude token counts**. Cortex has no access to Claude's real tokenizer (it isn't publicly available outside Anthropic's API), so `count_tokens()` uses OpenAI's `tiktoken` (`cl100k_base` encoding) as a stand-in. It's close enough to drive internal budgeting decisions (recall depth, `max_tokens` cutoffs, dedup thresholds), but the absolute numbers can differ from what Claude itself would count — treat them as **directionally correct, not exact**.
+
+The benchmarks above were also measured against a small corpus (10 memories). Some operations that report sub-millisecond latency here (e.g. `cortex_facts`) rely on non-indexed `LIKE '%word%'` scans internally and will not stay sub-millisecond as the fact table grows into the tens of thousands of rows — see the note on fact search in `core/engine.py` for where that fallback is used.
 
 ---
 
