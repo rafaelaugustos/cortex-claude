@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import shutil
@@ -368,6 +369,66 @@ def _fail(msg: str) -> None:
     print(f"  [FAIL] {msg}")
 
 
+def _pip_install_cmd() -> tuple[list[str], dict[str, str] | None]:
+    """Build an install command (and env, if any) that works whether or not
+    `pip` is present.
+
+    spaCy's own `spacy download` picks between `python -m pip install` and
+    `uv pip install` internally (see spacy.cli.download._get_pip_install_cmd),
+    but its fallback assumes an "active" venv that `uv` recognizes — which
+    isn't true for `uv tool install`-managed environments (or plain `uv
+    venv`/`uv sync` ones without pip bootstrapped), producing a confusing
+    "No virtual environment found" error. We build the command explicitly
+    instead: prefer real pip if importable, otherwise call `uv pip install`
+    scoped to this exact interpreter via `--python sys.executable`.
+
+    Even with an explicit `--python <path>`, `uv` still scans PATH to
+    validate/compare interpreters, and can fail on unrelated broken shims
+    from other Python version managers (pyenv, asdf, etc. — a broken
+    `~/.pyenv/shims/python` is enough to make `uv pip install` fail with a
+    confusing interpreter-query error, even though it's not the interpreter
+    we asked for). Overriding just PATH on top of an inherited `os.environ`
+    isn't enough: some shells/tools (e.g. gvm) stash a full copy of an old
+    PATH in a *different* env var (observed: `GVM_PATH_BACKUP`), and uv (or
+    the shell it spawns) can still pick that up. We work around this with a
+    genuinely minimal environment — not `os.environ` with PATH overridden —
+    containing only PATH (uv's directory + the target interpreter's
+    directory) and HOME (uv needs it to locate its cache/config).
+    """
+    if importlib.util.find_spec("pip") is not None:
+        return [sys.executable, "-m", "pip", "install"], None
+
+    uv_path = shutil.which("uv")
+    if uv_path:
+        minimal_path = os.pathsep.join(
+            dict.fromkeys([os.path.dirname(uv_path), os.path.dirname(sys.executable)])
+        )
+        env = {"PATH": minimal_path}
+        if "HOME" in os.environ:
+            env["HOME"] = os.environ["HOME"]
+        return [uv_path, "pip", "install", "--python", sys.executable], env
+
+    raise RuntimeError("neither pip nor uv is available to install packages")
+
+
+def _download_spacy_model(model_name: str = "en_core_web_sm") -> None:
+    """Download and install a spaCy pipeline package without relying on
+    `spacy download`'s own pip/uv fallback (see _pip_install_cmd)."""
+    from spacy.about import __download_url__
+    from spacy.cli.download import get_compatibility, get_model_filename, get_version
+
+    compatibility = get_compatibility()
+    version = get_version(model_name, compatibility)
+    filename = get_model_filename(model_name, version)
+    base_url = __download_url__ if __download_url__.endswith("/") else __download_url__ + "/"
+    download_url = base_url + filename
+
+    cmd, env = _pip_install_cmd()
+    proc = subprocess.run(cmd + [download_url], capture_output=True, text=True, env=env)
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.strip()[-500:] or "spacy model install failed")
+
+
 def run_setup() -> None:
     print()
     print("  Cortex Claude Setup")
@@ -539,13 +600,7 @@ def run_setup() -> None:
             spacy.load("en_core_web_sm")
             _skip("spaCy model already installed")
         except OSError:
-            proc = subprocess.run(
-                [sys.executable, "-m", "spacy", "download", "en_core_web_sm"],
-                capture_output=True,
-                text=True,
-            )
-            if proc.returncode != 0:
-                raise RuntimeError(proc.stderr.strip()[-500:] or "spacy download failed")
+            _download_spacy_model("en_core_web_sm")
             _ok("spaCy model downloaded")
         results.append(("spaCy model (en_core_web_sm)", True, ""))
     except ImportError:
