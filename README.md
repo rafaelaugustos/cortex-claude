@@ -13,7 +13,7 @@
     <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License">
   </a>
   <a href="pyproject.toml">
-    <img src="https://img.shields.io/badge/version-0.7.1-green.svg" alt="Version">
+    <img src="https://img.shields.io/badge/version-0.7.2-green.svg" alt="Version">
   </a>
   <a href="pyproject.toml">
     <img src="https://img.shields.io/badge/python-%3E%3D3.11-brightgreen.svg" alt="Python">
