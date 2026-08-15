@@ -18,6 +18,17 @@ async def handle_code(
     if not symbol:
         return "symbol required"
 
+    # Optional "path:name" form to disambiguate when the same name is
+    # defined in multiple files (e.g. "src/a.py:run" vs "src/b.py:run").
+    # Falls back to plain-name lookup (matching every file) when there's
+    # no ":" — same as before this disambiguation was added.
+    want_path: str | None = None
+    lookup_name = symbol
+    if ":" in symbol:
+        maybe_path, _, maybe_name = symbol.rpartition(":")
+        if maybe_path and maybe_name:
+            want_path, lookup_name = maybe_path, maybe_name
+
     scopes = [scope] if scope else engine._scope_manager.resolve(cwd)
 
     found_any = False
@@ -31,62 +42,87 @@ async def handle_code(
 
         defined_rows = conn.execute(
             "SELECT object FROM facts WHERE scope = ? AND subject = ? AND relation = 'defined_in'",
-            (s, symbol),
+            (s, lookup_name),
         ).fetchall()
 
         if not defined_rows:
             continue
 
+        # Group by defining file (object is "path:line") so calls/imports
+        # from unrelated same-named symbols in other files aren't mixed
+        # into one block. If `want_path` was given, only that file's
+        # section is shown.
+        by_file: dict[str, list[str]] = {}
+        for (obj,) in defined_rows:
+            file_path = obj.rsplit(":", 1)[0] if ":" in obj else obj
+            by_file.setdefault(file_path, []).append(obj)
+
+        if want_path is not None:
+            by_file = {p: locs for p, locs in by_file.items() if p == want_path}
+            if not by_file:
+                continue
+
         found_any = True
-        lines.append(f"[{s}] {symbol}")
-        for r in defined_rows:
-            lines.append(f"  defined_in: {r[0]}")
 
-        lang_rows = conn.execute(
-            "SELECT DISTINCT object FROM facts WHERE scope = ? AND subject = ? AND relation = 'in_language'",
-            (s, symbol),
-        ).fetchall()
-        if lang_rows:
-            langs = ", ".join(r[0] for r in lang_rows)
-            lines.append(f"  language: {langs}")
+        for file_path, locations in by_file.items():
+            qualified = f"{file_path}:{lookup_name}"
+            lines.append(f"[{s}] {lookup_name}  ({file_path})")
+            for loc in locations:
+                lines.append(f"  defined_in: {loc}")
 
-        calls = conn.execute(
-            "SELECT DISTINCT object FROM facts WHERE scope = ? AND subject = ? AND relation = 'calls' LIMIT 20",
-            (s, symbol),
-        ).fetchall()
-        if calls:
-            lines.append(f"  calls: {', '.join(r[0] for r in calls)}")
+            lang_rows = conn.execute(
+                "SELECT DISTINCT object FROM facts WHERE scope = ? AND subject = ? AND relation = 'in_language'",
+                (s, lookup_name),
+            ).fetchall()
+            if lang_rows:
+                langs = ", ".join(r[0] for r in lang_rows)
+                lines.append(f"  language: {langs}")
 
-        callers = conn.execute(
-            "SELECT DISTINCT subject FROM facts WHERE scope = ? AND relation = 'calls' AND object = ? LIMIT 20",
-            (s, symbol),
-        ).fetchall()
-        if callers:
-            lines.append(f"  called_by: {', '.join(r[0] for r in callers)}")
+            calls = conn.execute(
+                "SELECT DISTINCT object FROM facts WHERE scope = ? AND subject = ? AND relation = 'calls' LIMIT 20",
+                (s, lookup_name),
+            ).fetchall()
+            if calls:
+                lines.append(f"  calls: {', '.join(r[0] for r in calls)}")
 
-        extends = conn.execute(
-            "SELECT DISTINCT object FROM facts WHERE scope = ? AND subject = ? AND relation = 'extends'",
-            (s, symbol),
-        ).fetchall()
-        if extends:
-            lines.append(f"  extends: {', '.join(r[0] for r in extends)}")
+            calls_from = conn.execute(
+                "SELECT DISTINCT object FROM facts WHERE scope = ? AND subject = ? AND relation = 'calls_from' LIMIT 20",
+                (s, qualified),
+            ).fetchall()
+            if calls_from:
+                resolved = ", ".join(r[0] for r in calls_from)
+                lines.append(f"  calls (resolved to import): {resolved}")
 
-        imports = conn.execute(
-            "SELECT DISTINCT object FROM facts WHERE scope = ? AND subject = ? AND relation = 'imports' LIMIT 20",
-            (s, symbol),
-        ).fetchall()
-        if imports:
-            lines.append(f"  imports: {', '.join(r[0] for r in imports)}")
+            callers = conn.execute(
+                "SELECT DISTINCT subject FROM facts WHERE scope = ? AND relation = 'calls' AND object = ? LIMIT 20",
+                (s, lookup_name),
+            ).fetchall()
+            if callers:
+                lines.append(f"  called_by: {', '.join(r[0] for r in callers)}")
 
-        mentions = conn.execute(
-            "SELECT DISTINCT subject FROM facts WHERE scope = ? AND relation = 'mentions' AND object = ? LIMIT 10",
-            (s, symbol),
-        ).fetchall()
-        if mentions:
-            ids = ", ".join(r[0].replace("memory:", "")[:8] for r in mentions[:5])
-            lines.append(f"  mentioned_in_memories: {len(mentions)} (ids: {ids}...)")
+            extends = conn.execute(
+                "SELECT DISTINCT object FROM facts WHERE scope = ? AND subject = ? AND relation = 'extends'",
+                (s, lookup_name),
+            ).fetchall()
+            if extends:
+                lines.append(f"  extends: {', '.join(r[0] for r in extends)}")
 
-        lines.append("")
+            imports = conn.execute(
+                "SELECT DISTINCT object FROM facts WHERE scope = ? AND subject = ? AND relation = 'imports' LIMIT 20",
+                (s, lookup_name),
+            ).fetchall()
+            if imports:
+                lines.append(f"  imports: {', '.join(r[0] for r in imports)}")
+
+            mentions = conn.execute(
+                "SELECT DISTINCT subject FROM facts WHERE scope = ? AND relation = 'mentions' AND object = ? LIMIT 10",
+                (s, lookup_name),
+            ).fetchall()
+            if mentions:
+                ids = ", ".join(r[0].replace("memory:", "")[:8] for r in mentions[:5])
+                lines.append(f"  mentioned_in_memories: {len(mentions)} (ids: {ids}...)")
+
+            lines.append("")
 
     if not found_any:
         return f"Symbol '{symbol}' not found in code graph. Index files first with cortex_index_code."

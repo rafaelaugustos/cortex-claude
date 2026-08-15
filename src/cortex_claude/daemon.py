@@ -43,6 +43,7 @@ class CortexDaemon:
         self._saves_since_cluster: dict[str, int] = {}
         self._last_cluster_at: dict[str, float] = {}
         self._cluster_in_flight: set[str] = set()
+        self._cluster_runs_since_reassign: dict[str, int] = {}
         self._known_symbols_cache: dict[str, set[str]] = {}
         self._project_scan_in_flight: set[str] = set()
         self._project_scan_tasks: dict[str, asyncio.Task] = {}
@@ -305,9 +306,24 @@ class CortexDaemon:
             conn = self._engine.get_scope_connection(scope)
             stats = await asyncio.to_thread(self._cluster_engine.cluster_scope, conn, scope)
             self._last_cluster_at[scope] = time.time()
+            self._maybe_reassign_stale(conn, scope)
             return stats
         finally:
             self._cluster_in_flight.discard(scope)
+
+    def _maybe_reassign_stale(self, conn, scope: str) -> None:
+        reassign_after = self._cluster_config.reassign_after_runs
+        if reassign_after <= 0:
+            return
+
+        self._cluster_runs_since_reassign[scope] = (
+            self._cluster_runs_since_reassign.get(scope, 0) + 1
+        )
+        if self._cluster_runs_since_reassign[scope] < reassign_after:
+            return
+
+        self._cluster_runs_since_reassign[scope] = 0
+        self._cluster_engine.reassign_stale(conn, scope)
 
     async def start(self):
         if SOCKET_PATH.exists():

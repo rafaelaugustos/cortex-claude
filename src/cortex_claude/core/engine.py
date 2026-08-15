@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+import numpy as np
+
 from cortex_claude.core.decay import recalculate_decay_scores
 from cortex_claude.core.privacy import is_fully_private, strip_private
 from cortex_claude.core.scope_manager import ScopeManager
@@ -88,42 +90,55 @@ class CortexEngine:
             (c for c in candidates if c[1] >= self._config.dedup_similarity_threshold),
             None,
         )
-        if dup_candidate:
-            existing_memory = self._memory_repo.get(conn, dup_candidate[0])
-            if existing_memory:
-                merged = f"{existing_memory.content}\n\n{content}"
-                self._fact_repo.delete_by_memory(conn, existing_memory.id)
-                self._memory_repo.delete(conn, existing_memory.id)
-                content = merged
-                embedding = self._embeddings.embed(content)
-                tokens = count_tokens(content)
 
-        summary = summarize(content) if tokens > 50 else None
+        # Everything below is one logical unit of work (dedup merge, insert,
+        # fact extraction/contradiction handling) — run it as a single
+        # transaction so a crash or exception midway can't leave a memory
+        # persisted without its facts, or facts penalized without the new
+        # memory actually saved. Every repo call below passes commit=False;
+        # we commit once at the end (or roll back on any exception).
+        try:
+            if dup_candidate:
+                existing_memory = self._memory_repo.get(conn, dup_candidate[0])
+                if existing_memory:
+                    merged = f"{existing_memory.content}\n\n{content}"
+                    self._fact_repo.delete_by_memory(conn, existing_memory.id, commit=False)
+                    self._memory_repo.delete(conn, existing_memory.id, commit=False)
+                    content = merged
+                    embedding = self._embeddings.embed(content)
+                    tokens = count_tokens(content)
 
-        memory = Memory(
-            content=content,
-            summary=summary,
-            tags=tags or [],
-            scope=write_scope,
-        )
+            summary = summarize(content) if tokens > 50 else None
 
-        self._memory_repo.save(conn, memory, embedding)
+            memory = Memory(
+                content=content,
+                summary=summary,
+                tags=tags or [],
+                scope=write_scope,
+            )
 
-        facts = extract_facts(
-            content,
-            min_confidence=self._config.fact_min_confidence,
-            claude_fallback=self._config.fact_claude_fallback,
-            claude_confidence_threshold=self._config.fact_claude_confidence_threshold,
-        )
-        for fact in facts:
-            fact.source_memory_id = memory.id
-            fact.scope = write_scope
-        if facts:
+            self._memory_repo.save(conn, memory, embedding, commit=False)
+
+            facts = extract_facts(
+                content,
+                min_confidence=self._config.fact_min_confidence,
+                claude_fallback=self._config.fact_claude_fallback,
+                claude_confidence_threshold=self._config.fact_claude_confidence_threshold,
+            )
             for fact in facts:
-                contradictions = self._fact_repo.detect_contradictions(conn, fact, write_scope)
-                if contradictions:
-                    self._fact_repo.penalize(conn, [c.id for c in contradictions])
-            self._fact_repo.save_batch(conn, facts)
+                fact.source_memory_id = memory.id
+                fact.scope = write_scope
+            if facts:
+                for fact in facts:
+                    contradictions = self._fact_repo.detect_contradictions(conn, fact, write_scope)
+                    if contradictions:
+                        self._fact_repo.penalize(conn, [c.id for c in contradictions], commit=False)
+                self._fact_repo.save_batch(conn, facts, commit=False)
+
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
         return SaveResult(
             memory_id=memory.id,
@@ -257,8 +272,6 @@ class CortexEngine:
             cluster = self._cluster_repo.get(conn, cluster_id)
             if cluster is None or cluster.scope != s:
                 continue
-
-            import numpy as np
 
             centroid = cluster.centroid
             if centroid is None:
@@ -592,12 +605,10 @@ class CortexEngine:
     ) -> ForgetResult:
         """Delete memories by id or semantic query.
 
-        Note: deleting a clustered memory updates the owning cluster's
-        member_count (via recount_members) but does not recompute its
-        centroid — the centroid drifts slightly stale until the next
-        `cortex_clusters action="backfill"`. Recomputing it on every forget
-        would require re-reading every remaining member's embedding, which
-        is too expensive to do per-delete.
+        Deleting a clustered memory recomputes the owning cluster's
+        centroid and member_count from its remaining members. Clusters left
+        with zero members are deleted outright rather than lingering with a
+        stale centroid.
         """
         scopes = [scope] if scope else self._scope_manager.resolve(cwd)
         # candidate_scope tracks, per to-be-deleted memory id, which scope it
@@ -625,7 +636,7 @@ class CortexEngine:
 
         deleted_by_scope: dict[str, list[str]] = {}
         if not dry_run:
-            touched_cluster_scopes: set[str] = set()
+            touched_clusters: set[tuple[str, int]] = set()
             for mid in to_delete:
                 s = candidate_scope.get(mid)
                 if s is None:
@@ -637,11 +648,19 @@ class CortexEngine:
                     cluster_id = self._memory_repo.delete(conn, mid)
                     deleted_by_scope.setdefault(s, []).append(mid)
                     if cluster_id is not None:
-                        touched_cluster_scopes.add(s)
+                        touched_clusters.add((s, cluster_id))
 
-            for s in touched_cluster_scopes:
+            for s, cluster_id in touched_clusters:
                 conn = self._storage.get_database(s)
-                self._cluster_repo.recount_members(conn, s)
+                remaining = self._memory_repo.get_embeddings_for_cluster(conn, cluster_id)
+                if not remaining:
+                    self._cluster_repo.delete(conn, cluster_id)
+                    conn.commit()
+                    continue
+                new_centroid = np.mean(remaining, axis=0)
+                self._cluster_repo.update_centroid(
+                    conn, cluster_id, new_centroid, member_count=len(remaining)
+                )
         else:
             for mid in to_delete:
                 s = candidate_scope.get(mid)

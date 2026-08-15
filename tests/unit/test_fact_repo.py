@@ -109,3 +109,20 @@ class TestDeleteBySourceFile:
         ])
         assert repo.delete_by_source_file(db, "project:b", "/a.py") == 0
         assert repo.count(db) == 1
+
+    def test_removes_calls_from_facts_qualified_by_path(self, db, repo):
+        """calls_from facts use a `path:name` subject (not a bare symbol
+        name), so they need their own cleanup path distinct from the
+        defined_in-based one used for calls/imports/extends."""
+        repo.save_batch(db, [
+            Fact(subject="foo", relation="defined_in", object="/a.py:1", scope="global", source_memory_id=None),
+            Fact(subject="/a.py:foo", relation="calls_from", object="mod:bar", scope="global", source_memory_id=None),
+            Fact(subject="/b.py:other", relation="calls_from", object="mod:bar", scope="global", source_memory_id=None),
+        ])
+        assert repo.count(db) == 3
+
+        deleted = repo.delete_by_source_file(db, "global", "/a.py")
+        assert deleted == 2
+        assert repo.count(db) == 1
+        remaining = repo.search(db, "other", scope="global")
+        assert len(remaining) == 1

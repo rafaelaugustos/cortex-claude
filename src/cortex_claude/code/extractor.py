@@ -32,6 +32,13 @@ class Symbol:
     calls: list[str] = field(default_factory=list)
     extends: list[str] = field(default_factory=list)
     imports: list[str] = field(default_factory=list)
+    # Best-effort correlation of calls to the module they were imported
+    # from, populated only where the extractor can resolve it (currently:
+    # Python `from module import name` followed by a call to `name()` in
+    # the same file — the most common case, not a full import resolver).
+    # Maps callee name -> source module. See extract_symbols for how this
+    # is built; empty when nothing could be resolved.
+    resolved_calls: dict[str, str] = field(default_factory=dict)
 
 
 # Tree-sitter S-expression queries per language. We capture functions, classes/structs,
@@ -44,6 +51,7 @@ QUERIES: dict[str, str] = {
         (class_definition name: (identifier) @class.name) @class.body
         (import_statement name: (dotted_name) @import.name)
         (import_from_statement module_name: (dotted_name) @import.name)
+        (import_from_statement name: (dotted_name) @import.imported_name)
         (call function: (identifier) @call.name)
         (call function: (attribute attribute: (identifier) @call.name))
     """,
@@ -209,6 +217,10 @@ def extract_symbols(path: str | Path, content: str) -> list[Symbol]:
     pending_calls: list[tuple[int, str]] = []
     pending_imports: list[str] = []
     pending_extends: list[str] = []
+    # name imported via `from module import name` -> module it came from.
+    # Populated only for Python (see QUERIES["python"]'s import.imported_name
+    # capture); empty for every other language.
+    imported_name_to_module: dict[str, str] = {}
 
     path_str = str(path)
     captures_iter = (
@@ -242,6 +254,14 @@ def extract_symbols(path: str | Path, content: str) -> list[Symbol]:
         elif capture_name == "import.name":
             text = node.text.decode("utf-8", errors="ignore").strip("\"'")
             pending_imports.append(text)
+        elif capture_name == "import.imported_name":
+            imported_name = node.text.decode("utf-8", errors="ignore")
+            parent = node.parent
+            if parent is not None and parent.type == "import_from_statement":
+                module_node = parent.child_by_field_name("module_name")
+                if module_node is not None:
+                    module_text = module_node.text.decode("utf-8", errors="ignore")
+                    imported_name_to_module[imported_name] = module_text
         elif capture_name == "class.extends":
             text = node.text.decode("utf-8", errors="ignore")
             pending_extends_with_pos.append((node.start_byte, text))
@@ -274,6 +294,9 @@ def extract_symbols(path: str | Path, content: str) -> list[Symbol]:
                 sym = symbols_by_body[key]
                 if call_name != sym.name and call_name not in sym.calls:
                     sym.calls.append(call_name)
+                module = imported_name_to_module.get(call_name)
+                if module is not None:
+                    sym.resolved_calls[call_name] = module
                 break
 
     # Attach extends to the enclosing class symbol when possible.

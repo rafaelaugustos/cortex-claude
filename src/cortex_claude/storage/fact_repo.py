@@ -27,7 +27,7 @@ class FactRepository:
         conn.commit()
         return fact.id
 
-    def save_batch(self, conn: sqlite3.Connection, facts: list[Fact]) -> int:
+    def save_batch(self, conn: sqlite3.Connection, facts: list[Fact], commit: bool = True) -> int:
         saved = 0
         for fact in facts:
             existing = self._find_duplicate(conn, fact, fact.scope)
@@ -47,7 +47,8 @@ class FactRepository:
                     (fact.id, fact.subject, fact.relation, fact.object, fact.confidence, fact.source_memory_id, fact.scope, fact.created_at, fact.temporal),
                 )
                 saved += 1
-        conn.commit()
+        if commit:
+            conn.commit()
         return saved
 
     def _find_duplicate(self, conn: sqlite3.Connection, fact: Fact, scope: str) -> dict | None:
@@ -163,11 +164,12 @@ class FactRepository:
         ).fetchall()
         return [self._row_to_fact(row) for row in rows]
 
-    def delete_by_memory(self, conn: sqlite3.Connection, memory_id: str) -> int:
+    def delete_by_memory(self, conn: sqlite3.Connection, memory_id: str, commit: bool = True) -> int:
         cursor = conn.execute(
             "DELETE FROM facts WHERE source_memory_id = ?", (memory_id,)
         )
-        conn.commit()
+        if commit:
+            conn.commit()
         return cursor.rowcount
 
     def delete_by_source_file(self, conn: sqlite3.Connection, scope: str, path: str) -> int:
@@ -179,23 +181,33 @@ class FactRepository:
         (subjects) defined in this file, then delete every fact about those
         subjects in this scope (defined_in, in_language, calls, extends,
         imports) so re-indexing an edited file doesn't accumulate stale facts
-        for removed/renamed symbols.
+        for removed/renamed symbols. Also deletes `calls_from` facts, whose
+        subject is `path:name` rather than a bare symbol name (see
+        code/facts.py::symbols_to_facts).
         """
         subjects = conn.execute(
             "SELECT DISTINCT subject FROM facts WHERE scope = ? AND relation = 'defined_in' AND object LIKE ?",
             (scope, f"{path}:%"),
         ).fetchall()
         subject_names = [row[0] for row in subjects]
-        if not subject_names:
-            return 0
 
-        placeholders = ",".join("?" for _ in subject_names)
+        deleted = 0
+        if subject_names:
+            placeholders = ",".join("?" for _ in subject_names)
+            cursor = conn.execute(
+                f"DELETE FROM facts WHERE scope = ? AND subject IN ({placeholders})",
+                (scope, *subject_names),
+            )
+            deleted += cursor.rowcount
+
         cursor = conn.execute(
-            f"DELETE FROM facts WHERE scope = ? AND subject IN ({placeholders})",
-            (scope, *subject_names),
+            "DELETE FROM facts WHERE scope = ? AND relation = 'calls_from' AND subject LIKE ?",
+            (scope, f"{path}:%"),
         )
+        deleted += cursor.rowcount
+
         conn.commit()
-        return cursor.rowcount
+        return deleted
 
     def count(self, conn: sqlite3.Connection) -> int:
         row = conn.execute("SELECT COUNT(*) FROM facts").fetchone()
@@ -231,13 +243,16 @@ class FactRepository:
         ).fetchall()
         return [self._row_to_fact(row) for row in rows]
 
-    def penalize(self, conn: sqlite3.Connection, fact_ids: list[str], amount: float = 0.15) -> None:
+    def penalize(
+        self, conn: sqlite3.Connection, fact_ids: list[str], amount: float = 0.15, commit: bool = True
+    ) -> None:
         for fid in fact_ids:
             conn.execute(
                 "UPDATE facts SET confidence = MAX(confidence - ?, 0.1) WHERE id = ?",
                 (amount, fid),
             )
-        conn.commit()
+        if commit:
+            conn.commit()
 
     def recalibrate(self, conn: sqlite3.Connection) -> int:
         rows = conn.execute(

@@ -20,6 +20,14 @@ class ClusteringConfig:
     max_label_length: int = 60
     saves_between_runs: int = 20
     cooldown_seconds: int = 300
+    # How many incremental cluster_scope() runs happen before a reassignment
+    # pass considers moving stale (poorly-fit) memories to a better cluster.
+    # 0 disables reassignment entirely. See ClusteringEngine.reassign_stale.
+    reassign_after_runs: int = 10
+    # A member is "stale" if its similarity to its own cluster's centroid
+    # has drifted below threshold * this factor — i.e. it's no longer a
+    # confident fit for the cluster it's sitting in.
+    reassign_drift_factor: float = 0.9
 
     @classmethod
     def from_dict(cls, raw: dict) -> ClusteringConfig:
@@ -33,6 +41,8 @@ class ClusteringConfig:
         cfg.max_label_length = raw.get("max_label_length", cfg.max_label_length)
         cfg.saves_between_runs = raw.get("saves_between_runs", cfg.saves_between_runs)
         cfg.cooldown_seconds = raw.get("cooldown_seconds", cfg.cooldown_seconds)
+        cfg.reassign_after_runs = raw.get("reassign_after_runs", cfg.reassign_after_runs)
+        cfg.reassign_drift_factor = raw.get("reassign_drift_factor", cfg.reassign_drift_factor)
         return cfg
 
 
@@ -42,6 +52,13 @@ class ClusterStats:
     new_clusters: int = 0
     relabeled: int = 0
     skipped: int = 0
+
+
+@dataclass
+class ReassignStats:
+    moved: int = 0
+    examined: int = 0
+    emptied_clusters: int = 0
 
 
 def _cosine(a: np.ndarray, b: np.ndarray) -> float:
@@ -64,11 +81,15 @@ class ClusteringEngine:
 
     Labels are derived from the most frequent subjects/objects in the cluster's facts.
 
-    Note: clustering is append-only. A memory is only ever considered while
-    its `cluster_id` is NULL, so once assigned it never migrates even if a
-    better-fitting cluster appears later. Memories are processed in a fixed
-    `created_at ASC` order so repeated runs over the same data are
-    deterministic. To force a full re-clustering (e.g. after tuning
+    Note: incremental assignment (cluster_scope) is append-only — a memory
+    is only ever considered while its `cluster_id` is NULL, so a single run
+    never migrates an already-assigned memory even if a better-fitting
+    cluster appears later. Memories are processed in a fixed `created_at
+    ASC` order so repeated runs over the same data are deterministic.
+    `reassign_stale` mitigates drift from the append-only design with a
+    separate, periodic pass that moves poorly-fit memories to a better
+    cluster (see its docstring) — this is targeted, not a full
+    re-clustering. To force a full re-clustering (e.g. after tuning
     `similarity_threshold`), use `cortex_clusters action="backfill"`, which
     resets all assignments in the scope before re-running.
     """
@@ -142,6 +163,86 @@ class ClusteringEngine:
         for cid in touched_clusters:
             if self._relabel_cluster(conn, cid):
                 stats.relabeled += 1
+
+        return stats
+
+    def reassign_stale(self, conn: sqlite3.Connection, scope: str) -> ReassignStats:
+        """Move poorly-fit memories to a better cluster.
+
+        Clustering is normally append-only (see class docstring) — this is
+        the mitigation for that: a periodic, targeted pass (not a full
+        re-clustering) that only touches memories whose similarity to their
+        *own* cluster's centroid has drifted below
+        `threshold * reassign_drift_factor`. For each such memory, it finds
+        the best-fitting cluster among all existing centroids in the scope
+        and moves the memory there if that's a different, better-fitting
+        cluster. Both the origin and destination clusters' centroids and
+        member_counts are updated. A cluster left with zero members is
+        deleted.
+        """
+        stats = ReassignStats()
+        if not self.config.enabled or self.config.reassign_after_runs <= 0:
+            return stats
+
+        existing = self._clusters.list_for_scope(conn, scope)
+        centroids: dict[int, tuple[np.ndarray, float, int]] = {
+            c.id: (c.centroid, float(np.linalg.norm(c.centroid)), c.member_count)
+            for c in existing
+            if c.centroid is not None
+        }
+        if len(centroids) < 2:
+            return stats
+
+        members = self._memories.iter_clustered_with_embeddings(conn, scope)
+        threshold = self.config.similarity_threshold * self.config.reassign_drift_factor
+
+        moves: list[tuple[str, int, int]] = []  # (memory_id, from_cluster, to_cluster)
+        for memory_id, emb, current_cluster_id in members:
+            current = centroids.get(current_cluster_id)
+            if current is None:
+                continue
+            emb_norm = float(np.linalg.norm(emb))
+            current_sim = _cosine_with_norms(emb, emb_norm, current[0], current[1])
+            if current_sim >= threshold:
+                continue
+
+            stats.examined += 1
+            best_id, best_sim = current_cluster_id, current_sim
+            for cid, (centroid, centroid_norm, _) in centroids.items():
+                sim = _cosine_with_norms(emb, emb_norm, centroid, centroid_norm)
+                if sim > best_sim:
+                    best_sim = sim
+                    best_id = cid
+
+            if best_id != current_cluster_id:
+                moves.append((memory_id, current_cluster_id, best_id))
+
+        if not moves:
+            return stats
+
+        # Apply moves against the DB (member_count/centroid recomputed from
+        # ground truth afterward, not tracked incrementally — reassignment
+        # is infrequent enough that re-reading is cheap and avoids drift
+        # between in-memory bookkeeping and what's actually stored).
+        self._memories.set_cluster_batch(
+            conn, [(mid, to_cid) for mid, _, to_cid in moves]
+        )
+        stats.moved = len(moves)
+
+        touched: set[int] = set()
+        for _, from_cid, to_cid in moves:
+            touched.add(from_cid)
+            touched.add(to_cid)
+
+        for cid in touched:
+            remaining = self._memories.get_embeddings_for_cluster(conn, cid)
+            if not remaining:
+                self._clusters.delete(conn, cid)
+                stats.emptied_clusters += 1
+                continue
+            new_centroid = np.mean(remaining, axis=0)
+            self._clusters.update_centroid(conn, cid, new_centroid, member_count=len(remaining))
+            self._relabel_cluster(conn, cid)
 
         return stats
 

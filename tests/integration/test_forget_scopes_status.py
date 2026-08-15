@@ -97,6 +97,64 @@ async def test_forget_updates_cluster_member_count(engine: CortexEngine):
 
 
 @pytest.mark.asyncio
+async def test_forget_recomputes_cluster_centroid(engine: CortexEngine):
+    from cortex_claude.clustering import ClusteringConfig, ClusteringEngine
+    from cortex_claude.storage import ClusterRepository, MemoryRepository
+    import numpy as np
+
+    texts = [
+        "The billing service charges customers monthly via Stripe",
+        "The billing service reconciles invoices with the accounting ledger",
+        "The billing service sends dunning emails for failed payments",
+    ]
+    ids = []
+    for text in texts:
+        r = await engine.save(content=text, scope="global")
+        ids.append(r.memory_id)
+
+    conn = engine.get_scope_connection("global")
+    ClusteringEngine(ClusteringConfig(similarity_threshold=0.3)).cluster_scope(conn, "global")
+
+    memory_repo = MemoryRepository()
+    cluster_repo = ClusterRepository()
+    cluster_id = memory_repo.get_cluster_id(conn, ids[0])
+    assert cluster_id is not None, "expected the first memory to land in a cluster"
+
+    await engine.forget(memory_id=ids[0], dry_run=False)
+
+    remaining = memory_repo.get_embeddings_for_cluster(conn, cluster_id)
+    if remaining:
+        expected_centroid = np.mean(remaining, axis=0)
+        cluster = cluster_repo.get(conn, cluster_id)
+        assert cluster is not None
+        np.testing.assert_allclose(cluster.centroid, expected_centroid, rtol=1e-5)
+    else:
+        # All members of that cluster were deleted — the cluster itself
+        # should be gone rather than lingering with a stale centroid.
+        assert cluster_repo.get(conn, cluster_id) is None
+
+
+@pytest.mark.asyncio
+async def test_forget_deletes_cluster_left_with_zero_members(engine: CortexEngine):
+    from cortex_claude.clustering import ClusteringConfig, ClusteringEngine
+    from cortex_claude.storage import ClusterRepository, MemoryRepository
+
+    r = await engine.save(content="A singular, uniquely-worded memory about zephyrs", scope="global")
+
+    conn = engine.get_scope_connection("global")
+    ClusteringEngine(ClusteringConfig(similarity_threshold=0.99)).cluster_scope(conn, "global")
+
+    memory_repo = MemoryRepository()
+    cluster_repo = ClusterRepository()
+    cluster_id = memory_repo.get_cluster_id(conn, r.memory_id)
+    assert cluster_id is not None
+
+    await engine.forget(memory_id=r.memory_id, dry_run=False)
+
+    assert cluster_repo.get(conn, cluster_id) is None
+
+
+@pytest.mark.asyncio
 async def test_scopes_list(engine: CortexEngine):
     await engine.save(content="Global memory", scope="global")
     await engine.save(content="Project memory", scope="project:test")

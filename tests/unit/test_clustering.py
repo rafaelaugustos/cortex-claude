@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from cortex_claude.clustering import ClusteringConfig, ClusteringEngine
-from cortex_claude.storage import ClusterRepository
+from cortex_claude.storage import ClusterRepository, MemoryRepository
 from cortex_claude.storage import migrations as M
 
 
@@ -137,6 +137,82 @@ class TestClustering:
                 same_before = cid_a == cid_b
                 same_after = second_assignment[mid_a] == second_assignment[mid_b]
                 assert same_before == same_after
+
+
+class TestReassignStale:
+    def test_moves_poorly_fit_memory_to_better_cluster(self, db: sqlite3.Connection):
+        # Two well-separated groups, clustered normally first.
+        a_ids = _seed_group(db, group=0, count=4, label_terms=["embeddings"])
+        b_ids = _seed_group(db, group=1, count=4, label_terms=["mcp"])
+
+        engine = ClusteringEngine(ClusteringConfig(similarity_threshold=0.5))
+        engine.cluster_scope(db, "global")
+
+        clusters = {c.id: c for c in ClusterRepository().list_for_scope(db, "global")}
+        assert len(clusters) == 2
+        memory_repo = MemoryRepository()
+        a_cluster_id = memory_repo.get_cluster_id(db, a_ids[0])
+        b_cluster_id = memory_repo.get_cluster_id(db, b_ids[0])
+        assert a_cluster_id != b_cluster_id
+
+        # Misfile one of group B's memories into group A's cluster directly
+        # (simulating a memory that was assigned early, before a better-fit
+        # cluster existed, or drifted due to centroid movement).
+        memory_repo.set_cluster(db, b_ids[0], a_cluster_id)
+        db.commit()
+
+        stats = engine.reassign_stale(db, "global")
+        assert stats.moved >= 1
+
+        assert memory_repo.get_cluster_id(db, b_ids[0]) == b_cluster_id
+
+    def test_disabled_by_zero_reassign_after_runs(self, db: sqlite3.Connection):
+        a_ids = _seed_group(db, group=0, count=4, label_terms=["embeddings"])
+        b_ids = _seed_group(db, group=1, count=4, label_terms=["mcp"])
+
+        engine = ClusteringEngine(
+            ClusteringConfig(similarity_threshold=0.5, reassign_after_runs=0)
+        )
+        engine.cluster_scope(db, "global")
+
+        memory_repo = MemoryRepository()
+        a_cluster_id = memory_repo.get_cluster_id(db, a_ids[0])
+        memory_repo.set_cluster(db, b_ids[0], a_cluster_id)
+        db.commit()
+
+        stats = engine.reassign_stale(db, "global")
+        assert stats.moved == 0
+        assert stats.examined == 0
+
+    def test_updates_member_counts_and_centroids_of_both_clusters(self, db: sqlite3.Connection):
+        a_ids = _seed_group(db, group=0, count=4, label_terms=["embeddings"])
+        b_ids = _seed_group(db, group=1, count=4, label_terms=["mcp"])
+
+        engine = ClusteringEngine(ClusteringConfig(similarity_threshold=0.5))
+        engine.cluster_scope(db, "global")
+
+        memory_repo = MemoryRepository()
+        cluster_repo = ClusterRepository()
+        a_cluster_id = memory_repo.get_cluster_id(db, a_ids[0])
+        b_cluster_id = memory_repo.get_cluster_id(db, b_ids[0])
+        memory_repo.set_cluster(db, b_ids[0], a_cluster_id)
+        db.commit()
+
+        engine.reassign_stale(db, "global")
+
+        clusters = {c.id: c for c in cluster_repo.list_for_scope(db, "global")}
+        # a_cluster gained then lost the misfiled member: back to its
+        # original 4. b_cluster lost one member during the misfile setup
+        # (set_cluster doesn't update counts) then regained it: back to 4.
+        assert clusters[a_cluster_id].member_count == 4
+        assert clusters[b_cluster_id].member_count == 4
+
+        expected_a_centroid = np.mean(
+            memory_repo.get_embeddings_for_cluster(db, a_cluster_id), axis=0
+        )
+        np.testing.assert_allclose(
+            clusters[a_cluster_id].centroid, expected_a_centroid, rtol=1e-5
+        )
 
 
 class TestClusterTraverse:

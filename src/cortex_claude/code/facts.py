@@ -72,15 +72,22 @@ def symbols_to_facts(symbols: list[Symbol]) -> list[Fact]:
     """Convert extracted symbols into knowledge-graph facts.
 
     Vocabulary:
-      - subject → defined_in → path:line   (one per symbol)
-      - subject → in_language → lang       (one per symbol)
-      - subject → calls → callee           (one per call site)
+      - subject → defined_in → path:line       (one per symbol)
+      - subject → in_language → lang           (one per symbol)
+      - subject → calls → callee               (one per call site)
       - subject → extends → parent_class
       - subject → imports → module_path
+      - path:subject → calls_from → module:callee   (aditional, best-effort)
 
     `calls`/`extends` resolution is purely textual (same-name matching
     within the parsed file), not scope- or import-aware — two same-named
-    functions in different files/scopes will share the same graph node.
+    functions in different files/scopes will share the same graph node
+    under `calls`. `calls_from` is an additive relation (never replaces
+    `calls`) that qualifies a call by both the caller's file (via a
+    `path:name` subject) and the callee's source module, but only for
+    calls the extractor could resolve against a `from module import name`
+    in the same file (see `Symbol.resolved_calls`) — most calls (same-file,
+    builtins, `module.func()` style, method calls) are not covered.
     """
     facts: list[Fact] = []
     seen: set[tuple[str, str, str]] = set()
@@ -107,6 +114,9 @@ def symbols_to_facts(symbols: list[Symbol]) -> list[Fact]:
 
         for callee in sym.calls:
             add(sym.name, "calls", callee)
+
+        for callee, module in sym.resolved_calls.items():
+            add(f"{sym.path}:{sym.name}", "calls_from", f"{module}:{callee}")
 
         for parent in sym.extends:
             add(sym.name, "extends", parent)

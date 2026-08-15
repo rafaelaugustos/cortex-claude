@@ -10,7 +10,13 @@ from cortex_claude.models.memory import Memory
 
 
 class MemoryRepository:
-    def save(self, conn: sqlite3.Connection, memory: Memory, embedding: np.ndarray) -> str:
+    def save(
+        self,
+        conn: sqlite3.Connection,
+        memory: Memory,
+        embedding: np.ndarray,
+        commit: bool = True,
+    ) -> str:
         conn.execute(
             """
             INSERT INTO memories (id, content, summary, tags, scope, created_at, updated_at, accessed_at, access_count, decay_score)
@@ -36,7 +42,8 @@ class MemoryRepository:
             (memory.id, embedding_blob),
         )
 
-        conn.commit()
+        if commit:
+            conn.commit()
         return memory.id
 
     def get(self, conn: sqlite3.Connection, memory_id: str) -> Memory | None:
@@ -92,7 +99,7 @@ class MemoryRepository:
         )
         conn.commit()
 
-    def delete(self, conn: sqlite3.Connection, memory_id: str) -> int | None:
+    def delete(self, conn: sqlite3.Connection, memory_id: str, commit: bool = True) -> int | None:
         """Delete a memory and its vector. Returns the cluster_id it belonged
         to (if any) so callers can update cluster bookkeeping (member_count)."""
         row = conn.execute(
@@ -102,7 +109,8 @@ class MemoryRepository:
 
         conn.execute("DELETE FROM memory_vectors WHERE id = ?", (memory_id,))
         conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
-        conn.commit()
+        if commit:
+            conn.commit()
         return cluster_id
 
     def search_fts(
@@ -198,6 +206,40 @@ class MemoryRepository:
             [(cid, mid) for mid, cid in assignments],
         )
         conn.commit()
+
+    def iter_clustered_with_embeddings(
+        self, conn: sqlite3.Connection, scope: str
+    ) -> list[tuple[str, np.ndarray, int]]:
+        """Yield (memory_id, embedding, cluster_id) for every already-clustered
+        memory in scope — used by reassignment to evaluate current fit
+        against other clusters."""
+        rows = conn.execute(
+            """
+            SELECT m.id, v.embedding, m.cluster_id
+            FROM memories m
+            JOIN memory_vectors v ON v.id = m.id
+            WHERE m.scope = ? AND m.cluster_id IS NOT NULL
+            ORDER BY m.created_at ASC
+            """,
+            (scope,),
+        ).fetchall()
+        return [
+            (row[0], np.frombuffer(row[1], dtype=np.float32), row[2]) for row in rows
+        ]
+
+    def get_embeddings_for_cluster(
+        self, conn: sqlite3.Connection, cluster_id: int
+    ) -> list[np.ndarray]:
+        rows = conn.execute(
+            """
+            SELECT v.embedding
+            FROM memories m
+            JOIN memory_vectors v ON v.id = m.id
+            WHERE m.cluster_id = ?
+            """,
+            (cluster_id,),
+        ).fetchall()
+        return [np.frombuffer(row[0], dtype=np.float32) for row in rows]
 
     def get_cluster_id(self, conn: sqlite3.Connection, memory_id: str) -> int | None:
         row = conn.execute(

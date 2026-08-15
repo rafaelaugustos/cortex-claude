@@ -120,3 +120,26 @@ class TestMentionFacts:
         facts = mention_facts("m", content, known, "global")
         objects = {f.object for f in facts}
         assert objects == {"my_func"}
+
+
+class TestCallsFromFact:
+    def test_resolved_call_emits_calls_from(self):
+        sym = Symbol(
+            name="hello", kind="function", line=5, language="python", path="/a.py",
+            calls=["run"], resolved_calls={"run": "foo.bar"},
+        )
+        facts = symbols_to_facts([sym])
+        calls_from = [f for f in facts if f.relation == "calls_from"]
+        assert len(calls_from) == 1
+        assert calls_from[0].subject == "/a.py:hello"
+        assert calls_from[0].object == "foo.bar:run"
+        # calls_from is additive — the plain `calls` fact is unaffected.
+        assert any(f.relation == "calls" and f.object == "run" for f in facts)
+
+    def test_no_resolved_calls_emits_no_calls_from_fact(self):
+        sym = Symbol(
+            name="hello", kind="function", line=5, language="python", path="/a.py",
+            calls=["helper"],
+        )
+        facts = symbols_to_facts([sym])
+        assert not any(f.relation == "calls_from" for f in facts)

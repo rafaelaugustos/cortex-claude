@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from cortex_claude.core.engine import CortexEngine
+from cortex_claude.storage import FactRepository
 
 
 @pytest.mark.asyncio
@@ -57,3 +58,23 @@ async def test_recall_ranks_by_relevance(engine: CortexEngine):
     assert len(result.memories) > 0
     has_postgres = any("postgresql" in m.content.lower() for m in result.memories)
     assert has_postgres
+
+
+@pytest.mark.asyncio
+async def test_save_is_atomic_rolls_back_on_failure(engine: CortexEngine, monkeypatch):
+    """A failure partway through save() (e.g. during fact persistence) must
+    not leave a memory row committed without its facts — the whole save is
+    one transaction."""
+    def boom(self, conn, facts, commit=True):
+        raise RuntimeError("simulated failure writing facts")
+
+    monkeypatch.setattr(FactRepository, "save_batch", boom)
+
+    with pytest.raises(RuntimeError, match="simulated failure"):
+        await engine.save(content="This memory must not survive a failed save")
+
+    result = await engine.recall(query="must not survive a failed save", depth="full", max_tokens=500)
+    assert len(result.memories) == 0
+
+    status = await engine.status()
+    assert status.total_memories == 0

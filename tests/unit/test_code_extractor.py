@@ -151,3 +151,58 @@ class Foo:
         assert "helper_b" in m2.calls
         assert "helper_a" not in foo.calls
         assert "helper_b" not in foo.calls
+
+
+class TestResolvedCalls:
+    """Best-effort call->import correlation (Python only, see Symbol.resolved_calls)."""
+
+    def test_resolves_from_import_call(self):
+        src = """
+from foo.bar import run
+
+def hello():
+    run()
+"""
+        syms = extract_symbols("g.py", src)
+        hello = next(s for s in syms if s.name == "hello")
+        assert hello.resolved_calls == {"run": "foo.bar"}
+
+    def test_does_not_resolve_builtin_or_local_calls(self):
+        src = """
+from foo.bar import run
+
+def helper():
+    pass
+
+def hello():
+    run()
+    helper()
+    print("x")
+"""
+        syms = extract_symbols("g.py", src)
+        hello = next(s for s in syms if s.name == "hello")
+        assert hello.resolved_calls == {"run": "foo.bar"}
+        assert "helper" not in hello.resolved_calls
+        assert "print" not in hello.resolved_calls
+
+    def test_no_imports_means_no_resolved_calls(self):
+        src = """
+def hello():
+    helper()
+"""
+        syms = extract_symbols("g.py", src)
+        hello = next(s for s in syms if s.name == "hello")
+        assert hello.resolved_calls == {}
+
+    def test_plain_import_statement_does_not_resolve(self):
+        """`import foo.bar` (not `from ... import ...`) has no separately
+        named import to correlate against a bare call like `run()`."""
+        src = """
+import foo.bar
+
+def hello():
+    run()
+"""
+        syms = extract_symbols("g.py", src)
+        hello = next(s for s in syms if s.name == "hello")
+        assert hello.resolved_calls == {}
