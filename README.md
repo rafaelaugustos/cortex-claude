@@ -122,6 +122,17 @@ That's it. The setup command:
 
 Restart Claude Code and it works in **every project**, no per-project config needed. Claude will automatically consult Cortex before saying "I don't know" and save important context to memory.
 
+### Upgrading
+
+`uv tool install cortex-claude` is idempotent by design &mdash; if it's already installed, running it again is a no-op and does **not** fetch a newer version, even after you've `uv tool install`ed a fresh copy. Use the dedicated upgrade command instead:
+
+```bash
+uv tool upgrade cortex-claude
+cortex-claude setup
+```
+
+(`pip install --upgrade cortex-claude` is the equivalent if you installed via pip.)
+
 ### Alternative: pip
 
 ```bash
