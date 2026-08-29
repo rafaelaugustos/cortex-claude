@@ -1,40 +1,47 @@
-import { type Stats } from '@/lib/api'
-import { Brain, GitFork, Database, HardDrive } from 'lucide-react'
+import { formatCount, formatSize, type Overview } from '@/lib/api'
 
-function formatSize(bytes: number) {
-  if (bytes < 1024) return bytes + ' B'
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
-}
-
-export function Header({ stats }: { stats: Stats | null }) {
+export function Header({ overview }: { overview: Overview | null }) {
   return (
-    <header className="h-14 bg-card border-b border-border flex items-center justify-between px-6">
-      <div className="flex items-center gap-3">
-        <h1 className="text-lg font-bold tracking-tight">
-          corte<span className="text-accent">x</span>
-        </h1>
-        <span className="text-xs text-text-dim font-mono">memory dashboard</span>
+    <header className="flex h-16 items-center justify-between border-b border-border bg-surface px-6">
+      <div className="flex items-baseline gap-3">
+        <div className="flex items-center gap-2.5">
+          <Mark />
+          <span className="display text-[19px]">cortex</span>
+        </div>
+        <span className="eyebrow">memória</span>
       </div>
 
-      {stats && (
-        <div className="flex gap-6">
-          <Stat icon={<Brain size={14} />} label="memories" value={stats.total_memories} />
-          <Stat icon={<GitFork size={14} />} label="facts" value={stats.total_facts} />
-          <Stat icon={<Database size={14} />} label="scopes" value={stats.scopes.length} />
-          <Stat icon={<HardDrive size={14} />} label="storage" value={formatSize(stats.total_size)} />
+      {overview && (
+        <div className="flex items-center gap-7">
+          <Stat label="memórias" value={formatCount(overview.totals.memories)} />
+          <Stat label="fatos" value={formatCount(overview.totals.facts)} />
+          <Stat label="clusters" value={formatCount(overview.totals.clusters)} />
+          <Stat label="em disco" value={formatSize(overview.totals.size)} />
         </div>
       )}
     </header>
   )
 }
 
-function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; value: string | number }) {
+function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center gap-1.5 text-xs text-text-dim">
-      {icon}
-      <span>{label}</span>
-      <span className="text-text font-semibold font-mono">{value}</span>
+    <div className="flex flex-col items-end leading-tight">
+      <span className="display tnum text-[15px] text-text">{value}</span>
+      <span className="eyebrow text-[9px]">{label}</span>
     </div>
+  )
+}
+
+function Mark() {
+  return (
+    <svg width="20" height="22" viewBox="0 0 20 22" fill="none" aria-hidden>
+      <path
+        d="M10 1 18.66 6v10L10 21 1.34 16V6L10 1Z"
+        stroke="var(--color-accent)"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+      <circle cx="10" cy="11" r="2.6" fill="var(--color-accent)" />
+    </svg>
   )
 }

@@ -1,122 +1,133 @@
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Header } from '@/components/Header'
-import { Sidebar } from '@/components/Sidebar'
-import { GraphView } from '@/components/GraphView'
-import { EntityDetail, MemoryDetail } from '@/components/DetailPanel'
-import { fetchStats, fetchMemories, fetchGraph, fetchEntity, searchMemories } from '@/lib/api'
-import type { Stats, Memory, GraphData, EntityData } from '@/lib/api'
+import { Sidebar, type View } from '@/components/Sidebar'
+import { ClusterGrid } from '@/components/ClusterGrid'
+import { ClusterDetail } from '@/components/ClusterDetail'
+import { MemoryList } from '@/components/MemoryList'
+import { Cleanup } from '@/components/Cleanup'
+import { EntityPanel, MemoryPanel } from '@/components/DetailPanel'
+import { fetchOverview, type CleanupRule, type Cluster, type Memory, type Overview } from '@/lib/api'
 
 export default function App() {
-  const [stats, setStats] = useState<Stats | null>(null)
-  const [memories, setMemories] = useState<Memory[]>([])
-  const [graphData, setGraphData] = useState<GraphData>({ nodes: [], edges: [] })
-  const [focusNodeId, setFocusNodeId] = useState<string | null>(null)
-
-  const [selectedEntity, setSelectedEntity] = useState<{ name: string; data: EntityData } | null>(null)
-  const [selectedMemory, setSelectedMemory] = useState<Memory | null>(null)
-
-  const scopes = useMemo(() => {
-    if (!stats) return []
-    return stats.scopes.map(s => s.name)
-  }, [stats])
+  const [overview, setOverview] = useState<Overview | null>(null)
+  const [view, setView] = useState<View>('clusters')
+  const [scope, setScope] = useState('all')
+  const [tag, setTag] = useState<string | null>(null)
+  const [cluster, setCluster] = useState<Cluster | null>(null)
+  const [memory, setMemory] = useState<Memory | null>(null)
+  const [entity, setEntity] = useState<string | null>(null)
+  const [seedRules, setSeedRules] = useState<CleanupRule[]>([])
+  const [refreshKey, setRefreshKey] = useState(0)
 
   const reload = useCallback(() => {
-    fetchStats().then(setStats)
-    fetchMemories().then(setMemories)
-    fetchGraph().then(setGraphData)
+    fetchOverview().then(setOverview).catch(() => setOverview(null))
+    setRefreshKey((k) => k + 1)
   }, [])
 
-  useEffect(() => { reload() }, [reload])
+  useEffect(() => {
+    fetchOverview().then(setOverview).catch(() => setOverview(null))
+  }, [])
 
-  const handleSearch = useCallback(async (q: string) => {
-    if (q.length < 2) {
-      fetchMemories().then(setMemories)
-      return
+  const goView = (v: View) => {
+    setView(v)
+    setCluster(null)
+    setMemory(null)
+    setEntity(null)
+  }
+
+  const pickTag = (t: string | null) => {
+    setTag(t)
+    if (t) {
+      setView('memories')
+      setCluster(null)
     }
-    const results = await searchMemories(q)
-    setMemories(results)
-  }, [])
+  }
 
-  const handleSelectNode = useCallback(async (id: string) => {
-    if (!id) {
-      setSelectedEntity(null)
-      return
-    }
-    const data = await fetchEntity(id)
-    setSelectedEntity({ name: id, data })
-    setSelectedMemory(null)
-  }, [])
+  const openMemory = (m: Memory) => {
+    setMemory(m)
+    setEntity(null)
+  }
 
-  const handleSelectMemory = useCallback((id: string) => {
-    const mem = memories.find(m => m.id === id)
-    if (mem) {
-      setSelectedMemory(mem)
-      setSelectedEntity(null)
-    }
-  }, [memories])
+  const openEntity = (name: string) => {
+    setEntity(name)
+    setMemory(null)
+  }
 
-  const handleFocusNode = useCallback((id: string) => {
-    setFocusNodeId(id)
-    setTimeout(() => setFocusNodeId(null), 500)
-  }, [])
-
-  const handleDeleted = useCallback((id: string) => {
-    setSelectedMemory(null)
-    setMemories(prev => prev.filter(m => m.id !== id))
-    reload()
-  }, [reload])
-
-  const handleUpdated = useCallback((id: string, content: string, tags: string[]) => {
-    setMemories(prev => prev.map(m =>
-      m.id === id ? { ...m, content, tags: JSON.stringify(tags) } : m
-    ))
-    setSelectedMemory(prev => {
-      if (prev && prev.id === id) {
-        return { ...prev, content, tags: JSON.stringify(tags) }
-      }
-      return prev
-    })
-  }, [])
+  const cleanCluster = (c: Cluster) => {
+    setSeedRules([{ type: 'cluster', value: c.id, scope: c.scope }])
+    goView('cleanup')
+  }
 
   return (
-    <div className="grid grid-cols-[320px_1fr] grid-rows-[56px_1fr] h-screen">
-      <div className="col-span-2">
-        <Header stats={stats} />
-      </div>
+    <div className="flex h-screen flex-col overflow-hidden bg-ink">
+      <Header overview={overview} />
 
-      <Sidebar
-        memories={memories}
-        facts={graphData.edges}
-        scopes={scopes}
-        onSearch={handleSearch}
-        onSelectMemory={handleSelectMemory}
-        onFocusNode={handleFocusNode}
-      />
-
-      <main className="relative bg-bg overflow-hidden">
-        <GraphView
-          data={graphData}
-          onSelectNode={handleSelectNode}
-          focusNodeId={focusNodeId}
+      <div className="flex min-h-0 flex-1">
+        <Sidebar
+          overview={overview}
+          view={view}
+          scope={scope}
+          tag={tag}
+          onView={goView}
+          onScope={(s) => {
+            setScope(s)
+            setCluster(null)
+          }}
+          onTag={pickTag}
         />
 
-        {selectedEntity && (
-          <EntityDetail
-            name={selectedEntity.name}
-            data={selectedEntity.data}
-            onClose={() => setSelectedEntity(null)}
-          />
-        )}
+        <main className="relative min-w-0 flex-1 overflow-hidden">
+          {view === 'clusters' &&
+            (cluster ? (
+              <ClusterDetail
+                cluster={cluster}
+                onBack={() => setCluster(null)}
+                onSelectMemory={openMemory}
+                onSelectEntity={openEntity}
+                onCleanCluster={cleanCluster}
+              />
+            ) : (
+              <ClusterGrid scope={scope} onOpen={setCluster} />
+            ))}
 
-        {selectedMemory && (
-          <MemoryDetail
-            memory={selectedMemory}
-            onClose={() => setSelectedMemory(null)}
-            onDeleted={handleDeleted}
-            onUpdated={handleUpdated}
-          />
-        )}
-      </main>
+          {view === 'memories' && (
+            <MemoryList
+              scope={scope}
+              tag={tag}
+              onClearTag={() => setTag(null)}
+              onSelect={openMemory}
+              selectedId={memory?.id}
+              refreshKey={refreshKey}
+            />
+          )}
+
+          {view === 'cleanup' && (
+            <Cleanup
+              overview={overview}
+              seedRules={seedRules}
+              onSeedConsumed={() => setSeedRules([])}
+              onDone={reload}
+            />
+          )}
+
+          {memory && (
+            <MemoryPanel
+              memory={memory}
+              onClose={() => setMemory(null)}
+              onChanged={reload}
+            />
+          )}
+
+          {entity && (
+            <EntityPanel
+              name={entity}
+              onClose={() => setEntity(null)}
+              onSelectMemory={openMemory}
+              onSelectEntity={setEntity}
+            />
+          )}
+        </main>
+      </div>
     </div>
   )
 }

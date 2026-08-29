@@ -1,32 +1,221 @@
 @import "tailwindcss";
 
+/* ─────────────────────────────────────────────────────────────
+   Cortex Labs design system — shared with cortex-site.
+   Bricolage Grotesque carries the display type; body stays on
+   system-ui so the dashboard feels native, not webby.
+   Cortex's product signature in the family is coral.
+   ───────────────────────────────────────────────────────────── */
+@font-face {
+  font-family: "Bricolage Grotesque";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url("/fonts/bricolage-grotesque.woff2") format("woff2");
+}
+
 @theme {
-  --color-bg: #0a0a0f;
-  --color-card: #12121a;
-  --color-card-hover: #1a1a2e;
-  --color-border: #1e1e30;
-  --color-text: #e0e0e8;
-  --color-text-dim: #6b6b80;
-  --color-accent: #f97316;
-  --color-accent-dim: #c2410c;
-  --color-node-green: #22c55e;
-  --color-node-blue: #3b82f6;
-  --color-node-purple: #a855f7;
-  --font-mono: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+  --color-ink: #08080b;
+  --color-surface: #101016;
+  --color-surface-2: #16161f;
+  --color-border: #21212e;
+  --color-hairline: #2b2b3a;
+
+  --color-text: #ececf2;
+  --color-text-dim: #8d8d9e;
+  --color-text-mute: #5c5c6b;
+
+  --color-coral: #ff8a5c;
+  --color-violet: #7b61ff;
+  --color-cyan: #3aa0ec;
+  --color-magenta: #ff5aa0;
+  --color-teal: #4fd6c0;
+  --color-amber: #f2c14e;
+
+  --color-accent: #ff8a5c;
+
+  --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+}
+
+:root {
+  color-scheme: dark;
+  --accent: var(--color-accent);
+}
+
+html,
+body {
+  height: 100%;
 }
 
 body {
   margin: 0;
-  background: var(--color-bg);
+  background: var(--color-ink);
   color: var(--color-text);
-  overflow: hidden;
-  height: 100vh;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
 }
 
-#root { height: 100vh; }
+#root {
+  height: 100vh;
+}
 
-::-webkit-scrollbar { width: 4px; }
-::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 2px; }
-::-webkit-scrollbar-track { background: transparent; }
+/* Display type carries the personality. Tight tracking, real weight. */
+.display {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  text-wrap: balance;
+}
+
+.eyebrow {
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-text-mute);
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* A quiet raised surface. No blur, no glass cliché — a real edge. */
+.panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+}
+
+.panel-link {
+  transition:
+    border-color 0.35s ease,
+    background-color 0.35s ease,
+    transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.panel-link:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--color-border));
+  background: color-mix(in srgb, var(--accent) 6%, var(--color-surface));
+  transform: translateY(-3px);
+}
+
+.btn-accent {
+  background: var(--accent);
+  color: var(--color-ink);
+  font-weight: 650;
+  border-radius: 11px;
+  transition:
+    filter 0.25s ease,
+    transform 0.2s ease;
+}
+.btn-accent:hover:not(:disabled) {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+.btn-accent:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-ghost {
+  border: 1px solid var(--color-border);
+  border-radius: 11px;
+  transition:
+    border-color 0.25s ease,
+    background-color 0.25s ease;
+}
+.btn-ghost:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--color-border));
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+.btn-ghost:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-danger {
+  background: var(--color-magenta);
+  color: var(--color-ink);
+  font-weight: 650;
+  border-radius: 11px;
+  transition:
+    filter 0.25s ease,
+    transform 0.2s ease;
+}
+.btn-danger:hover:not(:disabled) {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+.btn-danger:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+:where(a, button, [tabindex], input, select):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Faint dotted field — a grid, not aurora blobs. */
+.grid-field {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(
+    color-mix(in srgb, var(--color-text-mute) 22%, transparent) 1px,
+    transparent 1px
+  );
+  background-size: 30px 30px;
+  opacity: 0.35;
+}
+
+.reveal {
+  opacity: 0;
+  animation: reveal 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 999px;
+  border: 2px solid var(--color-ink);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-hairline);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+  .panel-link,
+  .btn-accent,
+  .btn-ghost,
+  .btn-danger {
+    transition: none;
+  }
+}

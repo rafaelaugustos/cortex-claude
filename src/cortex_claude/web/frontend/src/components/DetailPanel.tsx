@@ -1,226 +1,298 @@
-import { useState } from 'react'
-import { X, Trash2, Pencil, Check, XCircle } from 'lucide-react'
-import type { EntityData, Memory } from '@/lib/api'
-import { deleteMemory, updateMemory } from '@/lib/api'
+import { useEffect, useState } from 'react'
+import { Check, Pencil, Trash2, X } from 'lucide-react'
+import {
+  deleteMemory,
+  fetchEntity,
+  fetchMemory,
+  formatCount,
+  formatDateTime,
+  formatSize,
+  parseTags,
+  updateMemory,
+  type Fact,
+  type Memory,
+} from '@/lib/api'
+import { GraphView } from '@/components/GraphView'
 
-interface EntityProps {
-  name: string
-  data: EntityData
+function Shell({
+  title,
+  subtitle,
+  onClose,
+  children,
+  wide,
+}: {
+  title: string
+  subtitle?: string
   onClose: () => void
-}
-
-interface MemoryProps {
-  memory: Memory
-  onClose: () => void
-  onDeleted: (id: string) => void
-  onUpdated: (id: string, content: string, tags: string[]) => void
-}
-
-function parseTags(raw: string): string[] {
-  try { return JSON.parse(raw || '[]') } catch { return [] }
-}
-
-function formatDate(ts: number) {
-  if (!ts) return ''
-  return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
-
-export function EntityDetail({ name, data, onClose }: EntityProps) {
+  children: React.ReactNode
+  wide?: boolean
+}) {
   return (
-    <Panel title={name} onClose={onClose}>
-      {data.facts.length > 0 && (
-        <Section title={`Facts (${data.facts.length})`}>
-          {data.facts.map((f, i) => (
-            <div key={i} className="font-mono text-xs py-1 leading-relaxed">
-              <span className="text-node-blue">{f.subject}</span>
-              <span className="text-accent mx-1">&rarr;</span>
-              <span className="text-text-dim">{f.relation}</span>
-              <span className="text-accent mx-1">&rarr;</span>
-              <span className="text-node-green">{f.object}</span>
-            </div>
-          ))}
-        </Section>
-      )}
-
-      {data.memories.length > 0 && (
-        <Section title={`Related Memories (${data.memories.length})`}>
-          {data.memories.map(m => (
-            <div key={m.id} className="text-sm leading-relaxed p-2.5 bg-bg rounded-lg mb-2">
-              {m.content.substring(0, 250)}
-              {m.content.length > 250 && '...'}
-            </div>
-          ))}
-        </Section>
-      )}
-
-      {!data.facts.length && !data.memories.length && (
-        <div className="p-6 text-center text-text-dim text-sm">No details found.</div>
-      )}
-    </Panel>
-  )
-}
-
-export function MemoryDetail({ memory, onClose, onDeleted, onUpdated }: MemoryProps) {
-  const [editing, setEditing] = useState(false)
-  const [editContent, setEditContent] = useState(memory.content)
-  const [editTags, setEditTags] = useState(parseTags(memory.tags).join(', '))
-  const [confirmDelete, setConfirmDelete] = useState(false)
-  const tags = parseTags(memory.tags)
-
-  const handleSave = async () => {
-    const newTags = editTags.split(',').map(t => t.trim()).filter(Boolean)
-    const res = await updateMemory(memory.id, { content: editContent, tags: newTags })
-    if (res.ok) {
-      onUpdated(memory.id, editContent, newTags)
-      setEditing(false)
-    }
-  }
-
-  const handleDelete = async () => {
-    const res = await deleteMemory(memory.id)
-    if (res.ok) {
-      onDeleted(memory.id)
-    }
-  }
-
-  return (
-    <Panel title="Memory" onClose={onClose} actions={
-      <div className="flex gap-1">
-        {!editing && (
-          <button onClick={() => setEditing(true)} className="p-1.5 rounded-md text-text-dim hover:text-node-blue hover:bg-node-blue/10 transition-colors" title="Edit">
-            <Pencil size={13} />
-          </button>
-        )}
+    <div
+      className="reveal absolute inset-y-0 right-0 z-30 flex flex-col border-l border-border bg-surface shadow-[-24px_0_60px_-30px_rgba(0,0,0,0.9)]"
+      style={{ width: wide ? 620 : 440 }}
+    >
+      <div className="flex items-start gap-3 border-b border-border px-4 py-3">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold text-text" title={title}>
+            {title}
+          </p>
+          {subtitle && <p className="font-mono text-[11px] text-text-mute">{subtitle}</p>}
+        </div>
         <button
-          onClick={() => setConfirmDelete(true)}
-          className="p-1.5 rounded-md text-text-dim hover:text-red-400 hover:bg-red-400/10 transition-colors"
-          title="Delete"
+          onClick={onClose}
+          className="shrink-0 rounded-md p-1 text-text-mute transition-colors hover:bg-surface-2 hover:text-text"
         >
-          <Trash2 size={13} />
+          <X size={15} />
         </button>
       </div>
-    }>
-      {/* Delete confirmation */}
-      {confirmDelete && (
-        <div className="p-4 bg-red-500/5 border-b border-red-500/20">
-          <p className="text-sm text-red-400 mb-3">Delete this memory and all its facts?</p>
-          <div className="flex gap-2">
-            <button
-              onClick={handleDelete}
-              className="px-3 py-1.5 rounded-md bg-red-500/20 text-red-400 text-xs font-medium hover:bg-red-500/30 transition-colors"
-            >
-              Delete
-            </button>
-            <button
-              onClick={() => setConfirmDelete(false)}
-              className="px-3 py-1.5 rounded-md bg-bg text-text-dim text-xs hover:text-text transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
+      {children}
+    </div>
+  )
+}
 
-      <Section title="Content">
+// ── Memory ───────────────────────────────────────────────────
+
+export function MemoryPanel({
+  memory,
+  onClose,
+  onChanged,
+}: {
+  memory: Memory
+  onClose: () => void
+  onChanged: () => void
+}) {
+  const [facts, setFacts] = useState<Fact[]>([])
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(memory.content)
+  const [confirming, setConfirming] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    setEditing(false)
+    setConfirming(false)
+    setDraft(memory.content)
+    setFacts([])
+    fetchMemory(memory.id)
+      .then((r) => setFacts(r.facts ?? []))
+      .catch(() => setFacts([]))
+  }, [memory.id, memory.content])
+
+  const save = async () => {
+    setBusy(true)
+    try {
+      await updateMemory(memory.id, { content: draft })
+      setEditing(false)
+      onChanged()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const remove = async () => {
+    setBusy(true)
+    try {
+      await deleteMemory(memory.id)
+      onChanged()
+      onClose()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const tags = parseTags(memory.tags)
+
+  return (
+    <Shell
+      title="Memória"
+      subtitle={`${memory._scope} · ${formatDateTime(memory.created_at)} · ${formatSize(memory.size)}`}
+      onClose={onClose}
+    >
+      <div className="flex-1 overflow-y-auto p-4">
         {editing ? (
-          <div className="space-y-2">
-            <textarea
-              value={editContent}
-              onChange={e => setEditContent(e.target.value)}
-              className="w-full bg-bg border border-border rounded-lg p-3 text-sm text-text resize-none outline-none focus:border-accent min-h-[120px] font-mono"
-              rows={6}
-            />
-            <div>
-              <label className="text-[10px] font-semibold uppercase tracking-wider text-text-dim block mb-1">Tags (comma separated)</label>
-              <input
-                value={editTags}
-                onChange={e => setEditTags(e.target.value)}
-                className="w-full bg-bg border border-border rounded-md py-1.5 px-2.5 text-xs text-text outline-none focus:border-accent"
-                placeholder="tag1, tag2, tag3"
-              />
-            </div>
-            <div className="flex gap-2 pt-1">
-              <button
-                onClick={handleSave}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-md bg-accent/20 text-accent text-xs font-medium hover:bg-accent/30 transition-colors"
-              >
-                <Check size={12} /> Save
-              </button>
-              <button
-                onClick={() => { setEditing(false); setEditContent(memory.content); setEditTags(tags.join(', ')) }}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-md bg-bg text-text-dim text-xs hover:text-text transition-colors"
-              >
-                <XCircle size={12} /> Cancel
-              </button>
-            </div>
-          </div>
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            rows={14}
+            className="w-full resize-y rounded-[10px] border border-border bg-ink p-3 font-mono text-[12px] leading-relaxed text-text outline-none focus:border-accent/60"
+          />
         ) : (
-          <div className="text-sm leading-relaxed p-3 bg-bg rounded-lg whitespace-pre-wrap">
+          <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-text-dim">
             {memory.content}
-          </div>
+          </p>
         )}
-      </Section>
 
-      {memory.summary && !editing && (
-        <Section title="Summary">
-          <div className="text-sm leading-relaxed p-3 bg-bg rounded-lg text-text-dim">
-            {memory.summary}
-          </div>
-        </Section>
-      )}
+        <div className="mt-4 flex flex-wrap gap-1.5">
+          {tags.map((t) => (
+            <span
+              key={t}
+              className="rounded-md border border-border px-1.5 py-0.5 text-[10px] text-text-mute"
+            >
+              {t}
+            </span>
+          ))}
+        </div>
 
-      {!editing && (
-        <Section title="Metadata">
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            <MetaItem label="Scope" value={memory.scope} />
-            <MetaItem label="Decay" value={memory.decay_score.toFixed(3)} />
-            <MetaItem label="Accessed" value={`${memory.access_count}x`} />
-            <MetaItem label="Created" value={formatDate(memory.created_at)} />
-          </div>
-          {tags.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-3">
-              {tags.map(t => (
-                <span key={t} className="bg-bg border border-border rounded px-2 py-0.5 text-[10px] text-text-dim">{t}</span>
+        <div className="mt-5 grid grid-cols-3 gap-2">
+          <Metric label="relevância" value={memory.decay_score.toFixed(2)} />
+          <Metric label="acessos" value={String(memory.access_count)} />
+          <Metric label="cluster" value={memory.cluster_id ? `#${memory.cluster_id}` : '—'} />
+        </div>
+
+        {facts.length > 0 && (
+          <div className="mt-5">
+            <p className="eyebrow mb-2">{facts.length} fatos extraídos</p>
+            <div className="flex flex-col gap-0.5">
+              {facts.map((f, i) => (
+                <FactRow key={i} fact={f} />
               ))}
             </div>
-          )}
-        </Section>
-      )}
-    </Panel>
-  )
-}
-
-function Panel({ title, onClose, actions, children }: { title: string; onClose: () => void; actions?: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <div className="absolute top-3 right-3 w-[360px] max-h-[calc(100%-24px)] bg-card border border-border rounded-xl overflow-y-auto shadow-2xl shadow-black/40">
-      <div className="p-4 border-b border-border flex items-center justify-between sticky top-0 bg-card z-10">
-        <h3 className="text-base font-bold text-accent truncate pr-4">{title}</h3>
-        <div className="flex items-center gap-1">
-          {actions}
-          <button onClick={onClose} className="text-text-dim hover:text-text transition-colors p-1 ml-1">
-            <X size={16} />
-          </button>
-        </div>
+          </div>
+        )}
       </div>
-      {children}
+
+      <div className="flex items-center gap-2 border-t border-border p-3">
+        {editing ? (
+          <>
+            <button onClick={save} disabled={busy} className="btn-accent px-3 py-1.5 text-xs">
+              <span className="flex items-center gap-1.5">
+                <Check size={13} /> Salvar
+              </span>
+            </button>
+            <button
+              onClick={() => {
+                setEditing(false)
+                setDraft(memory.content)
+              }}
+              className="btn-ghost px-3 py-1.5 text-xs text-text-dim"
+            >
+              Cancelar
+            </button>
+          </>
+        ) : confirming ? (
+          <>
+            <span className="flex-1 text-xs text-text-dim">Apagar de vez?</span>
+            <button onClick={remove} disabled={busy} className="btn-danger px-3 py-1.5 text-xs">
+              Apagar
+            </button>
+            <button
+              onClick={() => setConfirming(false)}
+              className="btn-ghost px-3 py-1.5 text-xs text-text-dim"
+            >
+              Não
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={() => setEditing(true)}
+              className="btn-ghost px-3 py-1.5 text-xs text-text-dim"
+            >
+              <span className="flex items-center gap-1.5">
+                <Pencil size={13} /> Editar
+              </span>
+            </button>
+            <button
+              onClick={() => setConfirming(true)}
+              className="btn-ghost ml-auto px-3 py-1.5 text-xs text-text-mute hover:text-magenta"
+            >
+              <span className="flex items-center gap-1.5">
+                <Trash2 size={13} /> Apagar
+              </span>
+            </button>
+          </>
+        )}
+      </div>
+    </Shell>
+  )
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="panel px-2.5 py-2">
+      <p className="display tnum text-base text-text">{value}</p>
+      <p className="eyebrow text-[9px]">{label}</p>
     </div>
   )
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function FactRow({ fact }: { fact: Fact }) {
   return (
-    <div className="p-4 border-b border-border last:border-b-0">
-      <h4 className="text-[11px] font-semibold uppercase tracking-wider text-text-dim mb-2">{title}</h4>
-      {children}
+    <div className="rounded-md px-2 py-1 font-mono text-[11px] leading-relaxed transition-colors hover:bg-surface-2">
+      <span className="text-cyan">{fact.subject}</span>
+      <span className="mx-1 text-text-mute">→</span>
+      <span className="text-text-dim">{fact.relation}</span>
+      <span className="mx-1 text-text-mute">→</span>
+      <span className="text-teal">{fact.object}</span>
     </div>
   )
 }
 
-function MetaItem({ label, value }: { label: string; value: string }) {
+// ── Entity ───────────────────────────────────────────────────
+
+export function EntityPanel({
+  name,
+  onClose,
+  onSelectMemory,
+  onSelectEntity,
+}: {
+  name: string
+  onClose: () => void
+  onSelectMemory: (m: Memory) => void
+  onSelectEntity: (n: string) => void
+}) {
+  const [data, setData] = useState<Awaited<ReturnType<typeof fetchEntity>> | null>(null)
+
+  useEffect(() => {
+    setData(null)
+    fetchEntity(name).then(setData).catch(() => setData(null))
+  }, [name])
+
   return (
-    <div>
-      <span className="text-text-dim">{label}: </span>
-      <span className="font-mono text-text">{value}</span>
-    </div>
+    <Shell
+      title={name}
+      subtitle={data ? `${formatCount(data.facts.length)} fatos · ${data.memories.length} memórias` : 'carregando…'}
+      onClose={onClose}
+      wide
+    >
+      {!data ? (
+        <div className="flex flex-1 items-center justify-center text-sm text-text-mute">
+          Carregando entidade…
+        </div>
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="h-[42%] shrink-0 border-b border-border">
+            <GraphView
+              data={data.graph}
+              onSelectNode={(id) => id && id !== name && onSelectEntity(id)}
+              emptyLabel="Sem conexões para esta entidade."
+            />
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-3">
+            <p className="eyebrow mb-2">Fatos</p>
+            <div className="mb-4 flex flex-col gap-0.5">
+              {data.facts.slice(0, 40).map((f, i) => (
+                <FactRow key={i} fact={f} />
+              ))}
+            </div>
+
+            <p className="eyebrow mb-2">Memórias que mencionam</p>
+            {data.memories.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => onSelectMemory(m)}
+                className="mb-1 w-full rounded-[10px] border border-transparent p-2.5 text-left transition-colors hover:border-border hover:bg-surface-2"
+              >
+                <p className="line-clamp-2 text-[12px] leading-snug text-text-dim">{m.content}</p>
+                <p className="mt-1 font-mono text-[10px] text-text-mute">
+                  {m._scope} · {formatDateTime(m.created_at)}
+                </p>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </Shell>
   )
 }

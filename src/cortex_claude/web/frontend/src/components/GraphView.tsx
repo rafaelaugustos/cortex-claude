@@ -1,257 +1,223 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import cytoscape, { type Core } from 'cytoscape'
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Style = any
-import { Maximize2, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react'
-import type { GraphData } from '@/lib/api'
+import { Maximize2, RotateCcw, ZoomIn, ZoomOut } from 'lucide-react'
+import type { Graph } from '@/lib/api'
 
 interface Props {
-  data: GraphData
+  data: Graph
   onSelectNode: (id: string) => void
-  focusNodeId: string | null
+  emptyLabel?: string
 }
 
-const NODE_COLORS = [
-  '#f97316', '#3b82f6', '#a855f7', '#22c55e', '#ec4899',
-  '#14b8a6', '#eab308', '#6366f1', '#f43f5e', '#06b6d4',
-]
+/* The family palette. Nodes borrow the sibling products' signatures so the
+   graph reads as Cortex Labs, not as a rainbow. */
+const PALETTE = ['#ff8a5c', '#7b61ff', '#3aa0ec', '#4fd6c0', '#ff5aa0', '#f2c14e']
 
-function hashColor(str: string): string {
-  let hash = 0
-  for (let i = 0; i < str.length; i++) {
-    hash = str.charCodeAt(i) + ((hash << 5) - hash)
-  }
-  return NODE_COLORS[Math.abs(hash) % NODE_COLORS.length]
+function hashColor(s: string): string {
+  let h = 0
+  for (let i = 0; i < s.length; i++) h = s.charCodeAt(i) + ((h << 5) - h)
+  return PALETTE[Math.abs(h) % PALETTE.length]
 }
 
-function darken(hex: string): string {
-  const r = parseInt(hex.slice(1, 3), 16)
-  const g = parseInt(hex.slice(3, 5), 16)
-  const b = parseInt(hex.slice(5, 7), 16)
-  return `rgb(${Math.floor(r * 0.6)}, ${Math.floor(g * 0.6)}, ${Math.floor(b * 0.6)})`
+/* Long entity keys (file paths, mostly) blow the layout out. Show the tail. */
+function trim(label: string): string {
+  const s = label.trim()
+  if (s.length <= 26) return s
+  return '…' + s.slice(-25)
 }
 
-export function GraphView({ data, onSelectNode, focusNodeId }: Props) {
+const LAYOUT = {
+  name: 'cose',
+  animate: false,
+  nodeRepulsion: () => 4200,
+  idealEdgeLength: () => 55,
+  edgeElasticity: () => 120,
+  gravity: 0.9,
+  numIter: 500,
+  padding: 40,
+  nodeDimensionsIncludeLabels: false,
+  randomize: true,
+} as const
+
+/* Below this zoom the labels are unreadable anyway and just make a smear. */
+const LABEL_ZOOM = 0.62
+
+export function GraphView({ data, onSelectNode, emptyLabel }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const cyRef = useRef<Core | null>(null)
 
-  const initGraph = useCallback(() => {
-    if (!containerRef.current || !data.nodes.length) return
+  const build = useCallback(() => {
+    const container = containerRef.current
+    if (!container) return
 
-    if (cyRef.current) {
-      cyRef.current.destroy()
-    }
+    cyRef.current?.destroy()
+    cyRef.current = null
+    if (!data.nodes.length) return
 
-    const elements: cytoscape.ElementDefinition[] = []
+    /* Entity names go in as `data.entity`, never as the element id.
+       Cytoscape keys its internal traversal state on a bare object, so an
+       entity literally called "constructor" or "toString" resolves to an
+       inherited function and the layout throws. Synthetic ids are immune. */
+    const idOf = new Map<string, string>()
+    data.nodes.forEach((n, i) => idOf.set(n.id, `n${i}`))
 
-    data.nodes.forEach(n => {
-      const color = hashColor(n.id)
-      elements.push({
+    const elements: cytoscape.ElementDefinition[] = [
+      ...data.nodes.map((n, i) => ({
         data: {
-          id: n.id,
-          label: n.label,
+          id: `n${i}`,
+          entity: n.id,
+          label: trim(n.label),
           weight: n.weight,
-          color,
-          borderColor: darken(color),
+          color: hashColor(n.id),
         },
-      })
-    })
-
-    data.edges.forEach((e, i) => {
-      elements.push({
-        data: {
-          id: 'e' + i,
-          source: e.source,
-          target: e.target,
-          label: e.label,
-          confidence: e.confidence,
-        },
-      })
-    })
+      })),
+      ...data.edges.flatMap((e, i) => {
+        const source = idOf.get(e.source)
+        const target = idOf.get(e.target)
+        if (!source || !target) return []
+        return [{
+          data: { id: `e${i}`, source, target, label: e.label, confidence: e.confidence },
+        }]
+      }),
+    ]
 
     const cy = cytoscape({
-      container: containerRef.current,
+      container,
       elements,
       style: [
         {
           selector: 'node',
           style: {
-            'label': 'data(label)',
+            label: 'data(label)',
             'background-color': 'data(color)',
-            'border-color': 'data(borderColor)',
-            'border-width': 2.5,
-            'color': '#c8c8d4',
-            'font-size': '11px',
-            'font-family': "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+            'background-opacity': 0.9,
+            'border-width': 1.5,
+            'border-color': '#08080b',
+            color: '#8d8d9e',
+            'font-size': '10px',
+            'font-family': 'ui-sans-serif, system-ui, sans-serif',
             'font-weight': 500,
             'text-valign': 'bottom',
             'text-halign': 'center',
-            'text-margin-y': 8,
-            'width': 'mapData(weight, 1, 20, 20, 56)',
-            'height': 'mapData(weight, 1, 20, 20, 56)',
-            'text-outline-width': 2.5,
-            'text-outline-color': '#08080d',
-            'text-outline-opacity': 0.9,
+            'text-margin-y': 6,
+            'text-outline-width': 3,
+            'text-outline-color': '#08080b',
+            width: 'mapData(weight, 1, 40, 14, 46)',
+            height: 'mapData(weight, 1, 40, 14, 46)',
             'overlay-opacity': 0,
-            'shadow-blur': 12,
-            'shadow-color': 'data(color)',
-            'shadow-opacity': 0.25,
-            'shadow-offset-x': 0,
-            'shadow-offset-y': 0,
-            'transition-property': 'background-color, border-color, width, height, shadow-opacity, opacity',
-            'transition-duration': 300,
+            'transition-property': 'opacity, border-width, border-color, color',
+            'transition-duration': 180,
           },
         },
         {
           selector: 'edge',
           style: {
-            'width': 'mapData(confidence, 0.5, 1, 0.8, 2)',
-            'line-color': '#252538',
-            'line-opacity': 0.6,
-            'target-arrow-color': '#252538',
+            width: 'mapData(confidence, 0.4, 1, 0.5, 1.6)',
+            'line-color': '#21212e',
+            'target-arrow-color': '#21212e',
             'target-arrow-shape': 'triangle',
-            'arrow-scale': 0.6,
+            'arrow-scale': 0.55,
             'curve-style': 'bezier',
-            'control-point-step-size': 40,
-            'label': 'data(label)',
-            'font-size': '8px',
-            'font-family': "'SF Mono', 'Fira Code', monospace",
-            'font-weight': 400,
-            'color': '#3a3a50',
-            'text-rotation': 'autorotate',
-            'text-outline-width': 2,
-            'text-outline-color': '#08080d',
-            'text-outline-opacity': 0.8,
-            'text-margin-y': -8,
             'overlay-opacity': 0,
-            'transition-property': 'line-color, target-arrow-color, width, opacity, line-opacity',
-            'transition-duration': 300,
+            'transition-property': 'opacity, line-color, target-arrow-color, width',
+            'transition-duration': 180,
           },
         },
         {
-          selector: 'node.selected-node',
+          selector: 'node.selected',
           style: {
-            'border-width': 4,
-            'border-color': '#ffffff',
-            'shadow-opacity': 0.6,
-            'shadow-blur': 24,
-            'font-size': '13px',
+            'border-width': 3,
+            'border-color': '#ff8a5c',
+            color: '#ececf2',
+            'font-size': '12px',
             'font-weight': 700,
-            'color': '#ffffff',
             'z-index': 999,
           },
         },
         {
           selector: 'node.neighbor',
-          style: {
-            'shadow-opacity': 0.4,
-            'shadow-blur': 16,
-            'border-width': 3,
-            'color': '#e0e0e8',
-          },
+          style: { color: '#ececf2', 'border-color': '#2b2b3a', 'border-width': 2 },
         },
         {
-          selector: 'edge.highlighted',
+          selector: 'edge.active',
           style: {
-            'line-color': '#f97316',
-            'target-arrow-color': '#f97316',
-            'line-opacity': 1,
-            'width': 2.5,
-            'color': '#f97316',
+            'line-color': '#ff8a5c',
+            'target-arrow-color': '#ff8a5c',
+            width: 1.8,
+            label: 'data(label)',
             'font-size': '9px',
+            'font-family': "'SF Mono', ui-monospace, monospace",
+            color: '#ff8a5c',
+            'text-rotation': 'autorotate',
+            'text-outline-width': 3,
+            'text-outline-color': '#08080b',
             'z-index': 998,
           },
         },
-        {
-          selector: 'node.faded',
-          style: {
-            'opacity': 0.1,
-          },
-        },
-        {
-          selector: 'edge.faded',
-          style: {
-            'opacity': 0.04,
-          },
-        },
+        { selector: 'node.quiet', style: { 'text-opacity': 0 } },
+        { selector: '.dim', style: { opacity: 0.12 } },
       ],
-      layout: {
-        name: 'cose',
-        animate: true,
-        animationDuration: 1000,
-        animationEasing: 'ease-out-cubic' as any,
-        nodeRepulsion: () => 12000,
-        idealEdgeLength: () => 140,
-        edgeElasticity: () => 100,
-        gravity: 0.25,
-        numIter: 1000,
-        padding: 80,
-        nodeDimensionsIncludeLabels: true,
-      },
-      minZoom: 0.1,
-      maxZoom: 6,
-      wheelSensitivity: 0.3,
-      pixelRatio: 2,
+      layout: LAYOUT,
+      minZoom: 0.15,
+      maxZoom: 5,
+      wheelSensitivity: 0.25,
+      textureOnViewport: data.nodes.length > 120,
+      motionBlur: false,
+      pixelRatio: 1,
     })
 
-    cy.on('tap', 'node', evt => {
-      const node = evt.target
-      highlightNode(cy, node.id())
-      onSelectNode(node.id())
+    cy.on('tap', 'node', (evt) => {
+      focus(cy, evt.target.id())
+      onSelectNode(evt.target.data('entity'))
     })
 
-    cy.on('tap', evt => {
+    cy.on('tap', (evt) => {
       if (evt.target === cy) {
-        clearHighlight(cy)
+        clear(cy)
         onSelectNode('')
       }
     })
 
     cy.on('mouseover', 'node', () => {
-      containerRef.current!.style.cursor = 'pointer'
+      container.style.cursor = 'pointer'
     })
-
     cy.on('mouseout', 'node', () => {
-      containerRef.current!.style.cursor = 'default'
+      container.style.cursor = 'grab'
     })
 
+    let quiet: boolean | null = null
+    const syncLabels = () => {
+      const next = cy.zoom() < LABEL_ZOOM
+      if (next === quiet) return
+      quiet = next
+      cy.batch(() => cy.nodes().toggleClass('quiet', next))
+    }
+    cy.on('zoom', syncLabels)
+
+    cy.ready(() => {
+      cy.fit(undefined, 40)
+      syncLabels()
+    })
     cyRef.current = cy
   }, [data, onSelectNode])
 
   useEffect(() => {
-    initGraph()
-    return () => { cyRef.current?.destroy() }
-  }, [initGraph])
-
-  useEffect(() => {
-    if (focusNodeId && cyRef.current) {
-      const cy = cyRef.current
-      const node = cy.getElementById(focusNodeId)
-      if (node.length) {
-        cy.animate({ center: { eles: node }, zoom: 2.5 }, { duration: 500, easing: 'ease-out-cubic' as any })
-        highlightNode(cy, focusNodeId)
-      }
+    build()
+    return () => {
+      cyRef.current?.destroy()
+      cyRef.current = null
     }
-  }, [focusNodeId])
+  }, [build])
 
   return (
-    <div className="relative w-full h-full">
-      {/* Subtle grid background */}
-      <div
-        className="absolute inset-0 opacity-[0.03]"
-        style={{
-          backgroundImage: 'radial-gradient(circle, #ffffff 1px, transparent 1px)',
-          backgroundSize: '24px 24px',
-        }}
-      />
+    <div className="relative h-full w-full">
+      <div className="grid-field" />
+      <div ref={containerRef} className="relative z-10 h-full w-full" />
 
-      <div ref={containerRef} className="w-full h-full relative z-10" />
-
-      {data.nodes.length === 0 && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center text-text-dim z-20">
-          <div className="w-16 h-16 rounded-full bg-card border border-border flex items-center justify-center mb-4">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+      {!data.nodes.length && (
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 text-text-mute">
+          <div className="panel flex h-14 w-14 items-center justify-center">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
               <circle cx="12" cy="12" r="3" />
               <circle cx="5" cy="6" r="2" />
               <circle cx="19" cy="6" r="2" />
@@ -263,87 +229,83 @@ export function GraphView({ data, onSelectNode, focusNodeId }: Props) {
               <line x1="14.5" y1="13.5" x2="17.5" y2="16.5" />
             </svg>
           </div>
-          <p className="text-sm">No graph data yet</p>
-          <p className="text-xs mt-1">Save some memories to see the knowledge graph</p>
+          <p className="text-sm">{emptyLabel ?? 'Sem fatos para desenhar aqui.'}</p>
         </div>
       )}
 
-      {/* Controls */}
-      <div className="absolute bottom-4 left-4 flex gap-1 z-20">
-        <GraphBtn
-          icon={<Maximize2 size={14} />}
-          tooltip="Fit to view"
-          onClick={() => cyRef.current?.fit(undefined, 60)}
-        />
-        <GraphBtn
-          icon={<ZoomIn size={14} />}
-          tooltip="Zoom in"
-          onClick={() => {
-            const cy = cyRef.current
-            if (cy) cy.animate({ zoom: { level: cy.zoom() * 1.5, position: cy.extent() as any } }, { duration: 200 })
-          }}
-        />
-        <GraphBtn
-          icon={<ZoomOut size={14} />}
-          tooltip="Zoom out"
-          onClick={() => {
-            const cy = cyRef.current
-            if (cy) cy.animate({ zoom: { level: cy.zoom() * 0.67, position: cy.extent() as any } }, { duration: 200 })
-          }}
-        />
-        <GraphBtn
-          icon={<RotateCcw size={14} />}
-          tooltip="Re-layout"
-          onClick={() => {
-            if (!cyRef.current) return
-            clearHighlight(cyRef.current)
-            cyRef.current.layout({
-              name: 'cose',
-              animate: true,
-              animationDuration: 800,
-              nodeRepulsion: () => 12000,
-              idealEdgeLength: () => 140,
-              gravity: 0.25,
-              padding: 80,
-              nodeDimensionsIncludeLabels: true,
-            }).run()
-          }}
-        />
-      </div>
-
-      {/* Node count badge */}
       {data.nodes.length > 0 && (
-        <div className="absolute bottom-4 right-4 z-20 bg-card/80 backdrop-blur border border-border rounded-lg px-3 py-1.5 text-xs text-text-dim font-mono">
-          {data.nodes.length} nodes &middot; {data.edges.length} edges
-        </div>
+        <>
+          <div className="absolute bottom-4 left-4 z-20 flex gap-1.5">
+            <GraphBtn title="Ajustar à tela" onClick={() => cyRef.current?.fit(undefined, 50)}>
+              <Maximize2 size={13} />
+            </GraphBtn>
+            <GraphBtn
+              title="Aproximar"
+              onClick={() => cyRef.current?.zoom({ level: (cyRef.current?.zoom() ?? 1) * 1.4, renderedPosition: center(cyRef.current) })}
+            >
+              <ZoomIn size={13} />
+            </GraphBtn>
+            <GraphBtn
+              title="Afastar"
+              onClick={() => cyRef.current?.zoom({ level: (cyRef.current?.zoom() ?? 1) * 0.7, renderedPosition: center(cyRef.current) })}
+            >
+              <ZoomOut size={13} />
+            </GraphBtn>
+            <GraphBtn
+              title="Recalcular layout"
+              onClick={() => {
+                const cy = cyRef.current
+                if (!cy) return
+                clear(cy)
+                cy.layout(LAYOUT).run()
+                cy.fit(undefined, 50)
+              }}
+            >
+              <RotateCcw size={13} />
+            </GraphBtn>
+          </div>
+
+          <div className="panel absolute bottom-4 right-4 z-20 px-3 py-1.5 font-mono text-[11px] text-text-mute tnum">
+            {data.nodes.length} nós · {data.edges.length} arestas
+            {data.truncated && (
+              <span className="ml-1.5 text-accent" title={`sub-grafo completo: ${data.total_nodes} nós, ${data.total_edges} arestas`}>
+                (top de {data.total_edges.toLocaleString('pt-BR')})
+              </span>
+            )}
+          </div>
+        </>
       )}
     </div>
   )
 }
 
-function GraphBtn({ icon, tooltip, onClick }: { icon: React.ReactNode; tooltip: string; onClick: () => void }) {
+function center(cy: Core | null): { x: number; y: number } {
+  const c = cy?.container()
+  return c ? { x: c.clientWidth / 2, y: c.clientHeight / 2 } : { x: 0, y: 0 }
+}
+
+function GraphBtn({ title, onClick, children }: { title: string; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
       onClick={onClick}
-      title={tooltip}
-      className="bg-card/80 backdrop-blur border border-border rounded-lg p-2 text-text-dim hover:text-text hover:bg-card-hover hover:border-accent/40 transition-all duration-200"
+      title={title}
+      className="panel panel-link p-2 text-text-mute hover:text-text"
     >
-      {icon}
+      {children}
     </button>
   )
 }
 
-function highlightNode(cy: Core, nodeId: string) {
-  clearHighlight(cy)
-  const node = cy.getElementById(nodeId)
+function focus(cy: Core, id: string) {
+  clear(cy)
+  const node = cy.getElementById(id)
   if (!node.length) return
-
-  cy.elements().addClass('faded')
-  node.removeClass('faded').addClass('selected-node')
-  node.connectedEdges().removeClass('faded').addClass('highlighted')
-  node.neighborhood('node').removeClass('faded').addClass('neighbor')
+  cy.elements().addClass('dim')
+  node.removeClass('dim').addClass('selected')
+  node.connectedEdges().removeClass('dim').addClass('active')
+  node.neighborhood('node').removeClass('dim').addClass('neighbor')
 }
 
-function clearHighlight(cy: Core) {
-  cy.elements().removeClass('selected-node neighbor highlighted faded')
+function clear(cy: Core) {
+  cy.elements().removeClass('dim selected neighbor active')
 }

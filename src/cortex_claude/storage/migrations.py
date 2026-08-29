@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -57,6 +57,7 @@ CREATE INDEX IF NOT EXISTS idx_facts_subject ON facts(subject);
 CREATE INDEX IF NOT EXISTS idx_facts_object ON facts(object);
 CREATE INDEX IF NOT EXISTS idx_facts_relation ON facts(relation);
 CREATE INDEX IF NOT EXISTS idx_facts_subject_relation ON facts(subject, relation);
+CREATE INDEX IF NOT EXISTS idx_facts_source ON facts(source_memory_id);
 
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
@@ -122,6 +123,8 @@ def initialize_schema(conn: sqlite3.Connection, embedding_dim: int = 384) -> Non
             _migrate_to_v6(conn)
         if current < 7:
             _migrate_to_v7(conn)
+        if current < 8:
+            _migrate_to_v8(conn)
         return
 
     conn.executescript(SCHEMA_SQL)
@@ -265,4 +268,14 @@ def _migrate_to_v6(conn: sqlite3.Connection) -> None:
         conn.execute("CREATE INDEX idx_clusters_scope ON clusters(scope)")
 
     conn.execute("UPDATE schema_version SET version = 6")
+    conn.commit()
+
+
+def _migrate_to_v8(conn: sqlite3.Connection) -> None:
+    """Index facts by source memory. The cluster sub-graph query and
+    FactRepository.search_by_memories both join on this column."""
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_facts_source ON facts(source_memory_id)"
+    )
+    conn.execute("UPDATE schema_version SET version = 8")
     conn.commit()
