@@ -13,7 +13,7 @@
     <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License">
   </a>
   <a href="pyproject.toml">
-    <img src="https://img.shields.io/badge/version-0.7.2-green.svg" alt="Version">
+    <img src="https://img.shields.io/badge/version-0.8.0-green.svg" alt="Version">
   </a>
   <a href="pyproject.toml">
     <img src="https://img.shields.io/badge/python-%3E%3D3.11-brightgreen.svg" alt="Python">
@@ -311,19 +311,27 @@ Combines **vector similarity** (semantic meaning) with **FTS5** (exact keyword m
 
 ### Web Dashboard
 
-Interactive knowledge graph visualization and memory browser:
+Browse, explore and prune your memory:
 
 ```bash
 cortex-claude web
 # Opens at http://localhost:37800
 ```
 
+The dashboard navigates the way recall does &mdash; cheapest layer first. It never
+draws the whole graph, so it stays responsive on a database with tens of
+thousands of facts.
+
 Features:
-- **Interactive knowledge graph** &mdash; nodes are entities, edges are relations. Click a node to see all its facts and related memories.
-- **Memory browser** &mdash; browse all memories with search, tags, scope, and decay score.
-- **Facts list** &mdash; all extracted triplets, click to focus on the graph node.
-- **Live stats** &mdash; memory count, fact count, scopes, storage size.
-- **Dark theme** &mdash; designed for developers.
+- **Cluster map** &mdash; the landing view is your semantic sub-graphs, sized by member count. Open one to see its own sub-graph and its strongest memories.
+- **Entity focus** &mdash; click a node for that entity's neighbourhood, its facts, and the memories that mention it.
+- **Memory browser** &mdash; search, filter by scope and tag, sort by recency, relevance, last use or size. Paginated server-side.
+- **Bulk cleanup** &mdash; select by tag, scope, cluster or regex and preview exactly what goes before anything is deleted. Removing a memory takes its facts and its vector with it.
+- **Live stats** &mdash; memory and fact counts, clusters, storage, and a 30-day intake sparkline for spotting the day auto-capture ran away with itself.
+
+The dashboard binds to localhost only, sends no CORS headers, and validates
+`Host` and `Origin` so no other page in your browser can read or modify your
+memory.
 
 ---
 
