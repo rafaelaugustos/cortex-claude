@@ -1,7 +1,7 @@
 <h1 align="center">
   <br>
   <a href="https://github.com/rafaelaugustos/cortex-claude">
-    <img src="docs/logo.png" alt="Cortex Claude" width="400">
+    <img src="docs/icon.png" alt="Cortex Claude" width="160">
   </a>
   <br>
 </h1>
