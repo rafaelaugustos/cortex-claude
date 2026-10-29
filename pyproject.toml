@@ -78,6 +78,9 @@ packages = ["src/cortex_claude"]
 # produce it are build-time only and would otherwise duplicate the webfont.
 exclude = ["src/cortex_claude/web/frontend"]
 
+[tool.hatch.build.targets.sdist]
+exclude = ["site", "package.json", "package-lock.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"

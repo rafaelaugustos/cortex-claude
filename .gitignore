@@ -22,3 +22,7 @@ node_modules/
 src/cortex_claude/web/frontend/node_modules/
 .DS_Store
 .mcp.json
+
+# Docs site build output
+site/.vitepress/dist/
+site/.vitepress/cache/
