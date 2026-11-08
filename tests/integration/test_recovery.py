@@ -233,6 +233,30 @@ def test_service_definitions_pin_interpreter_and_restart_on_login(environment, t
         assert value['ExitTimeOut'] >= 15
 
 
+def test_duplicate_daemon_exits_without_importing_the_engine(environment):
+    import fcntl
+
+    home, _ = environment
+    script = '''
+import runpy, sys
+class RejectDaemonImport:
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == 'cortex_claude.daemon':
+            raise AssertionError('A duplicate instance must exit before importing the daemon')
+sys.meta_path.insert(0, RejectDaemonImport())
+sys.argv = ['cortex_claude', 'daemon']
+runpy.run_module('cortex_claude', run_name='__main__')
+'''
+    with (home / 'daemon.lock').open('a') as process_lock:
+        fcntl.flock(process_lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        result = subprocess.run([sys.executable, '-c', script],
+                                env={**os.environ, 'CORTEX_HOME': str(home)},
+                                capture_output=True, text=True, timeout=5)
+    assert result.returncode == 0, result.stderr
+    assert not (home / 'cortex.sock').exists()
+    assert not (home / 'cortex.pid').exists()
+
+
 def test_daemon_restart_drains_persisted_events_and_rejects_duplicate_instance(environment):
     home, repo = environment
     data = normalize('UserPromptSubmit', {'session_id': 'recover', 'cwd': str(repo), 'prompt': 'Implementar parser de pedidos'}, 'codex')

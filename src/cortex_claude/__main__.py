@@ -29,15 +29,21 @@ def main() -> None:
 
 
 def _run_daemon() -> None:
-    import asyncio
     import fcntl
-    from cortex_claude.daemon import CortexDaemon, CORTEX_HOME
-    CORTEX_HOME.mkdir(parents=True, exist_ok=True)
-    with (CORTEX_HOME / 'daemon.lock').open('a') as process_lock:
+    import os
+    from pathlib import Path
+
+    home = Path(os.environ.get('CORTEX_HOME', str(Path.home() / '.cortex-claude'))).expanduser()
+    home.mkdir(parents=True, exist_ok=True)
+    with (home / 'daemon.lock').open('a') as process_lock:
         try:
             fcntl.flock(process_lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             return
+        # Reject duplicate processes before loading the engine and its dependencies.
+        import asyncio
+        from cortex_claude.daemon import CortexDaemon
+
         daemon = CortexDaemon()
         try:
             asyncio.run(daemon.start(process_lock))
