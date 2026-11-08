@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -125,6 +125,8 @@ def initialize_schema(conn: sqlite3.Connection, embedding_dim: int = 384) -> Non
             _migrate_to_v7(conn)
         if current < 8:
             _migrate_to_v8(conn)
+        if current < 9:
+            _migrate_to_v9(conn)
         return
 
     conn.executescript(SCHEMA_SQL)
@@ -134,8 +136,9 @@ def initialize_schema(conn: sqlite3.Connection, embedding_dim: int = 384) -> Non
         "INSERT OR REPLACE INTO meta (key, value) VALUES ('embedding_dim', ?)",
         (str(embedding_dim),),
     )
-    conn.execute("INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,))
+    conn.execute("INSERT INTO schema_version (version) VALUES (8)")
     conn.commit()
+    _migrate_to_v9(conn)
 
 
 def _migrate_to_v2(conn: sqlite3.Connection) -> None:
@@ -279,3 +282,36 @@ def _migrate_to_v8(conn: sqlite3.Connection) -> None:
     )
     conn.execute("UPDATE schema_version SET version = 8")
     conn.commit()
+
+
+def _migrate_to_v9(conn: sqlite3.Connection) -> None:
+    """Move old tool dumps to a recoverable history outside retrieval indexes.
+
+    Preserve the complete memory, extracted facts and vector. Only explicitly
+    tagged auto-capture transcripts qualify; curated commands are untouched.
+    """
+    from cortex_claude.capture.quality import execution_dump
+    conn.create_function("cortex_execution_dump", 2, execution_dump, deterministic=True)
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.execute("CREATE TABLE IF NOT EXISTS execution_history AS SELECT * FROM memories WHERE 0")
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_execution_history_id ON execution_history(id)")
+        conn.execute("CREATE TABLE IF NOT EXISTS execution_facts AS SELECT * FROM facts WHERE 0")
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_execution_facts_id ON execution_facts(id)")
+        conn.execute("CREATE TABLE IF NOT EXISTS execution_vectors (id TEXT PRIMARY KEY, embedding BLOB NOT NULL)")
+        conn.execute("CREATE TEMP TABLE cortex_noise_ids AS SELECT id,cluster_id FROM memories WHERE cortex_execution_dump(content,tags)=1")
+        conn.execute("INSERT INTO execution_history SELECT * FROM memories WHERE id IN (SELECT id FROM cortex_noise_ids)")
+        conn.execute("INSERT INTO execution_facts SELECT * FROM facts WHERE source_memory_id IN (SELECT id FROM cortex_noise_ids)")
+        conn.execute("INSERT INTO execution_vectors SELECT id,embedding FROM memory_vectors WHERE id IN (SELECT id FROM cortex_noise_ids)")
+        conn.execute("DELETE FROM memory_vectors WHERE id IN (SELECT id FROM cortex_noise_ids)")
+        conn.execute("DELETE FROM facts WHERE source_memory_id IN (SELECT id FROM cortex_noise_ids)")
+        conn.execute("DELETE FROM memories WHERE id IN (SELECT id FROM cortex_noise_ids)")
+        # Mixed clusters must be rebuilt using only meaningful memories.
+        conn.execute("UPDATE memories SET cluster_id=NULL WHERE cluster_id IN (SELECT cluster_id FROM cortex_noise_ids)")
+        conn.execute("DELETE FROM clusters WHERE id IN (SELECT cluster_id FROM cortex_noise_ids)")
+        conn.execute("DROP TABLE cortex_noise_ids")
+        conn.execute("UPDATE schema_version SET version=9")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise

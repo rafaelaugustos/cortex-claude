@@ -4,9 +4,18 @@ import sys
 def main() -> None:
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
 
-    if cmd == "setup":
+    if cmd == "hook":
+        from cortex_claude.hooks import run_hook
+        run_hook(sys.argv[2] if len(sys.argv) > 2 else "", client=sys.argv[3] if len(sys.argv) > 3 else 'claude')
+    elif cmd == 'recovery':
+        from cortex_claude.reliability.cli import main as recovery_main
+        recovery_main(sys.argv[2:])
+    elif cmd == "learning":
+        from cortex_claude.hooks import learning_cli
+        learning_cli(sys.argv[2:])
+    elif cmd == "setup":
         from cortex_claude.setup import run_setup
-        run_setup()
+        run_setup(hooks_only="--hooks-only" in sys.argv)
     elif cmd == "daemon":
         _run_daemon()
     elif cmd == "web":
@@ -21,13 +30,19 @@ def main() -> None:
 
 def _run_daemon() -> None:
     import asyncio
-    from cortex_claude.daemon import CortexDaemon
-
-    daemon = CortexDaemon()
-    try:
-        asyncio.run(daemon.start())
-    except KeyboardInterrupt:
-        daemon.close()
+    import fcntl
+    from cortex_claude.daemon import CortexDaemon, CORTEX_HOME
+    CORTEX_HOME.mkdir(parents=True, exist_ok=True)
+    with (CORTEX_HOME / 'daemon.lock').open('a') as process_lock:
+        try:
+            fcntl.flock(process_lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return
+        daemon = CortexDaemon()
+        try:
+            asyncio.run(daemon.start(process_lock))
+        except KeyboardInterrupt:
+            pass
 
 
 if __name__ == "__main__":

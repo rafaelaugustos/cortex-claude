@@ -29,7 +29,10 @@ async def handle_code(
         if maybe_path and maybe_name:
             want_path, lookup_name = maybe_path, maybe_name
 
-    scopes = [scope] if scope else engine._scope_manager.resolve(cwd)
+    scopes = [scope] if scope else list(dict.fromkeys([
+        engine._scope_manager.auto_project_scope(cwd),
+        *engine._scope_manager.resolve(cwd),
+    ]))
 
     found_any = False
     lines: list[str] = []
@@ -165,7 +168,7 @@ async def handle_index_code(
     if not files:
         return f"no supported code files found at {target}"
 
-    write_scope = scope or engine._scope_manager.get_write_scope(cwd)
+    write_scope = scope or engine._scope_manager.auto_project_scope(cwd)
     conn = engine.get_scope_connection(write_scope)
     repo = FactRepository()
 

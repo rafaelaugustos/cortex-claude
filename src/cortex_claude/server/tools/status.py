@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from cortex_claude.core.engine import CortexEngine
+from cortex_claude.learning.store import LearningStore
 
 
 def _format_size(size_bytes: int) -> str:
@@ -18,12 +19,18 @@ async def handle_status(
     scope: str | None = None,
 ) -> str:
     result = await engine.status(scope=scope, cwd=cwd)
+    with LearningStore(engine._base_path) as learning:
+        learned = learning.stats()
 
     lines = [
         "=== Cortex Claude Status ===",
         f"Total memories: {result.total_memories}",
         f"Total facts: {result.total_facts}",
         f"Total storage: {_format_size(result.total_size_bytes)}",
+        f"Shared learned preferences/lessons: {learned['states'].get('active', 0)}",
+        f"Awaiting evidence: {learned['states'].get('candidate', 0)}",
+        f"Context tokens injected (estimate): {learned['injected_tokens']}",
+        f"Repeated content tokens avoided (estimate): {learned['repeat_tokens_avoided']}",
         "",
         f"{'Scope':<25} {'Memories':>10} {'Facts':>10} {'Size':>10}",
         "-" * 60,

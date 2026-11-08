@@ -16,4 +16,4 @@ def count_tokens(text: str) -> int:
     `max_tokens` budgets), should be read as directionally correct rather
     than exact Claude token counts.
     """
-    return len(_encoder.encode(text))
+    return len(_encoder.encode(text, disallowed_special=()))
