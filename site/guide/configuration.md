@@ -90,3 +90,20 @@ The `similarity_threshold` for [clusters](./clusters) (0.70 by default).
 ## Storage
 
 `max_db_size_mb` caps the size of the database.
+
+## Shared learning
+
+The `learning` section controls independent confirmations, token limits and raw capture. See [defaults and examples](./capture#token-controls).
+
+| Learning option | Default | Purpose |
+| --- | --- | --- |
+| `semantic_enabled` | `true` | Local resident embeddings; lexical fallback |
+| `semantic_model` | `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` | Model-specific cached vectors |
+| `semantic_merge_threshold` | `0.88` | Conservative paraphrase consolidation |
+| `semantic_recall_threshold` | `0.65` | Retrieval without lexical overlap |
+| `semantic_timeout_ms` | `250` | Hook wait limit before lexical fallback |
+| `max_detail_tokens` | `600` | Maximum episode details/read budget |
+| `experience_ttl_days` | `90` | Revalidation interval for experiences |
+| `measure_usage` | `true` | Incremental main-transcript provider counters |
+
+`learning.project_memory` (default `true`) refreshes bounded project structure in the shared database at session start. Disabling it stops refresh and automatic project context.

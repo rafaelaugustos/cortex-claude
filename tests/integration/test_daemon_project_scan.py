@@ -104,3 +104,22 @@ async def test_max_files_limit_is_respected(engine: CortexEngine, tmp_path: Path
     )
     assert "Indexed 2 files" in result
     assert "max_files=2" in result
+
+
+@pytest.mark.asyncio
+async def test_project_knowledge_refreshes_even_when_code_is_already_indexed(engine, tmp_path):
+    from cortex_claude.learning.store import LearningStore
+    from cortex_claude.learning.projects import project_detail
+    project_dir = tmp_path / 'known'
+    _write_py_files(project_dir, 1)
+    (project_dir / 'package.json').write_text('{"name":"known"}')
+    daemon = _make_daemon(engine)
+    first = daemon._maybe_index_project(str(project_dir))
+    profile_task = daemon._profile_tasks[str(project_dir)]
+    await daemon._project_scan_tasks[first['scope']]
+    await profile_task
+    (project_dir / 'package.json').write_text('{"name":"known-new"}')
+    assert daemon._maybe_index_project(str(project_dir))['skipped'] == 'already-indexed'
+    await daemon._profile_tasks[str(project_dir)]
+    with LearningStore(engine._base_path) as store:
+        assert project_detail(store, str(project_dir))['name'] == 'known-new'

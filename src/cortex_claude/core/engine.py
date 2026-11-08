@@ -146,6 +146,44 @@ class CortexEngine:
             tokens_stored=tokens,
         )
 
+    def update_memory(self, memory_id: str, content: str, scope: str,
+                      tags: list[str] | None = None) -> bool:
+        """Replace archive content and every derived representation atomically."""
+        import time
+        content = strip_private(content)
+        if not content:
+            raise ValueError("Updated memory is empty or entirely private")
+        conn = self.get_scope_connection(scope)
+        if not self._memory_repo.get(conn, memory_id):
+            return False
+        embedding = self._embeddings.embed(content)
+        summary = summarize(content) if count_tokens(content) > 50 else None
+        facts = extract_facts(content, min_confidence=self._config.fact_min_confidence,
+                              claude_fallback=self._config.fact_claude_fallback,
+                              claude_confidence_threshold=self._config.fact_claude_confidence_threshold)
+        for fact in facts:
+            fact.source_memory_id, fact.scope = memory_id, scope
+        with conn:
+            cluster_id = self._memory_repo.get_cluster_id(conn, memory_id)
+            conn.execute("UPDATE memories SET content=?, summary=?, updated_at=?, cluster_id=NULL WHERE id=?",
+                         (content, summary, int(time.time() * 1000), memory_id))
+            if tags is not None:
+                conn.execute("UPDATE memories SET tags=? WHERE id=?", (json.dumps(tags), memory_id))
+            conn.execute("DELETE FROM memory_vectors WHERE id=?", (memory_id,))
+            conn.execute("INSERT INTO memory_vectors(id,embedding) VALUES (?,?)",
+                         (memory_id, embedding.astype(np.float32).tobytes()))
+            self._fact_repo.delete_by_memory(conn, memory_id, commit=False)
+            self._fact_repo.save_batch(conn, facts, commit=False)
+            if cluster_id is not None:
+                remaining = self._memory_repo.get_embeddings_for_cluster(conn, cluster_id)
+                if remaining:
+                    centroid = np.mean(remaining, axis=0).astype(np.float32).tobytes()
+                    conn.execute("UPDATE clusters SET centroid=?, member_count=?, updated_at=? WHERE id=?",
+                                 (centroid, len(remaining), int(time.time() * 1000), cluster_id))
+                else:
+                    conn.execute("DELETE FROM clusters WHERE id=?", (cluster_id,))
+        return True
+
     async def recall(
         self,
         query: str,

@@ -4,18 +4,19 @@ import importlib.util
 import json
 import os
 import shutil
+import shlex
 import stat
 import subprocess
 import sys
 from pathlib import Path
 
-CORTEX_HOME = Path(os.environ.get("CORTEX_HOME", str(Path.home() / ".cortex-claude")))
+CORTEX_HOME = Path(os.environ.get("CORTEX_HOME", str(Path.home() / ".cortex-claude"))).expanduser()
 CLAUDE_CONFIG = Path.home() / ".claude.json"
 CLAUDE_SETTINGS = Path.home() / ".claude" / "settings.json"
 CLAUDE_MD = Path.home() / ".claude" / "CLAUDE.md"
 HOOKS_DIR = CORTEX_HOME / "hooks"
 
-CLAUDE_MD_CONTENT = """# Cortex Memory
+LEGACY_CLAUDE_MD_CONTENT = """# Cortex Memory
 
 You have access to **Cortex**, a persistent memory system with a knowledge graph and code graph. Use it.
 
@@ -61,123 +62,37 @@ You have access to **Cortex**, a persistent memory system with a knowledge graph
 - Information that changes every commit (use git for that)
 """
 
-SESSION_START_HOOK = '''#!/bin/bash
-CORTEX_HOME="${CORTEX_HOME:-$HOME/.cortex-claude}"
-GLOBAL_DB="$CORTEX_HOME/global.db"
-SOCKET="$CORTEX_HOME/cortex.sock"
+CLAUDE_MD_CONTENT = """<!-- cortex-memory:start -->
+# Cortex Memory
 
-INPUT=$(cat)
+Memory arrives automatically. Current instructions take precedence; do not recall supplied context. Reading/reuse is never evidence. Never save <private> content.
 
-if [ ! -S "$SOCKET" ]; then
-  python3 -c "
-import sys
-sys.path.insert(0, '.')
-try:
-    from cortex_claude.daemon import ensure_running
-    ensure_running()
-except Exception:
-    pass
-" 2>/dev/null &
-fi
+Use cortex_learn for compact preferences/corrections with stable topics. explicit=true only for standing user instructions; project facts use applicability="context". conditions and file dependencies constrain reuse.
 
-# Fire-and-forget: ask the daemon to index the whole project into the code
-# graph if it hasn't been indexed yet (see CortexDaemon._maybe_index_project).
-# Doesn't block session start — no response is read back.
-(echo "$INPUT" | python3 -c "
-import json, socket, sys, os
+After a reusable fix, record experience with situation/cause/solution. Link verification_id (status lists receipts) only when that test verifies the fix. Unverified episodes stay hypotheses. Report passed/failed outcomes after new applications; failures suspend reuse. Read lesson details only when needed.
 
-try:
-    data = json.load(sys.stdin)
-except Exception:
-    sys.exit(0)
+Use native Read directly before Edit if the editor requires its own receipt. Use cortex_read for bounded/repeated inspection without duplicate editor reads; mode="full" recovers a missing base, and more indicates remaining lines.
 
-cwd = data.get('cwd')
-if not cwd:
-    sys.exit(0)
+Use cortex_task at meaningful handoffs, not after each tool call: save objective/state, decisions, pending work, next_step and dependencies within 240 tokens. List/resume before restarting; verify files when needs_review=true. Updates/completion require expected_revision. Mark finished tasks complete.
+Automatic checkpoints preserve partial requests, changed paths and the assistant's last report. They are unverified; inspect current files before continuing and never infer completion from them. Failed memory saves are not confirmed persistence: report the failure. The dashboard's Health view shows durable pending operations and verified local backups.
 
-sock_path = os.path.expanduser('$SOCKET')
-try:
-    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    s.settimeout(2)
-    s.connect(sock_path)
-    s.sendall(json.dumps({'action': 'index_project', 'cwd': cwd}).encode())
-    s.shutdown(socket.SHUT_WR)
-    s.close()
-except Exception:
-    pass
-" 2>/dev/null) &
+For observed utility, cortex_learn action="feedback" accepts lesson_id, assessment=useful/irrelevant/corrected and query. It changes usefulness, never confirmations. Conflicts await dashboard review.
 
-[ ! -f "$GLOBAL_DB" ] && exit 0
+Use cortex_code for symbols, cortex_recall for missing archived context, cortex_save for reference material.
+Use cortex_project read before exploring a repository; refresh if missing/stale. Read relevant docs and entrypoints, then note purpose, architecture, conventions and decisions with supporting source files. Declared stack alone is not architectural understanding. Never save raw tool transcripts; save what was learned and why.
+<!-- cortex-memory:end -->
+"""
 
-CONTEXT=$(python3 -c "
-import sqlite3, os, glob
 
-cortex_home = os.path.expanduser('${CORTEX_HOME:-~/.cortex-claude}')
-dbs = []
+def _hook_launcher(event: str) -> str:
+    return "#!/bin/sh\nexec " + shlex.quote(sys.executable) + " -m cortex_claude hook " + shlex.quote(event) + "\n"
 
-global_db = os.path.join(cortex_home, 'global.db')
-if os.path.exists(global_db):
-    dbs.append(('global', global_db))
 
-scopes_dir = os.path.join(cortex_home, 'scopes')
-if os.path.isdir(scopes_dir):
-    for f in glob.glob(os.path.join(scopes_dir, '*.db')):
-        name = os.path.basename(f).replace('.db','').replace('__',':')
-        dbs.append((name, f))
+SESSION_START_HOOK = _hook_launcher("SessionStart")
+USER_PROMPT_HOOK = _hook_launcher("UserPromptSubmit")
+STOP_HOOK = _hook_launcher("Stop")
+FAILURE_HOOK = _hook_launcher("PostToolUseFailure")
 
-if not dbs:
-    exit(0)
-
-total_memories = 0
-total_facts = 0
-recent_facts = []
-
-for scope_name, db_path in dbs:
-    try:
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row
-        row = conn.execute('SELECT COUNT(*) as c FROM memories').fetchone()
-        total_memories += row[0]
-        row = conn.execute('SELECT COUNT(*) as c FROM facts').fetchone()
-        total_facts += row[0]
-        rows = conn.execute(
-            'SELECT subject, relation, object FROM facts ORDER BY confidence DESC, created_at DESC LIMIT 15'
-        ).fetchall()
-        for r in rows:
-            recent_facts.append(f'{r[0]} -> {r[1]} -> {r[2]}')
-        conn.close()
-    except Exception:
-        pass
-
-if total_memories == 0:
-    exit(0)
-
-lines = [
-    'You have access to Cortex persistent memory (cortex_save, cortex_recall, cortex_facts, cortex_traverse, cortex_forget, cortex_scopes, cortex_status).',
-    'IMPORTANT: Always use cortex_recall or cortex_facts BEFORE saying you do not know something.',
-    f'Memory: {total_memories} memories, {total_facts} facts, {len(dbs)} scope(s).',
-]
-
-if recent_facts:
-    lines.append('')
-    lines.append('Known facts:')
-    for f in recent_facts[:10]:
-        lines.append(f'  {f}')
-
-print(chr(10).join(lines))
-" 2>/dev/null)
-
-if [ -n "$CONTEXT" ]; then
-  jq -n --arg ctx "$CONTEXT" '{
-    hookSpecificOutput: {
-      hookEventName: "SessionStart",
-      additionalContext: $ctx
-    }
-  }'
-fi
-
-exit 0
-'''
 
 PRE_TOOL_USE_HOOK = '''#!/bin/bash
 # Cortex Claude — PreToolUse hook (Bash only)
@@ -213,7 +128,6 @@ stripped = cmd.strip()
 REWRITES = {
     'git status': 'git status --short --branch',
     'git log': 'git log --oneline -n 20',
-    'git diff': 'git diff --stat',
     'git branch': 'git branch --list',
 }
 
@@ -227,7 +141,6 @@ updated_input['command'] = new_cmd
 print(json.dumps({
     'hookSpecificOutput': {
         'hookEventName': 'PreToolUse',
-        'permissionDecision': 'allow',
         'updatedInput': updated_input,
     }
 }))
@@ -236,121 +149,7 @@ print(json.dumps({
 exit 0
 '''
 
-POST_TOOL_USE_HOOK = '''#!/bin/bash
-CORTEX_HOME="${CORTEX_HOME:-$HOME/.cortex-claude}"
-SOCKET="$CORTEX_HOME/cortex.sock"
-
-[ ! -S "$SOCKET" ] && exit 0
-
-INPUT=$(cat)
-
-(echo "$INPUT" | python3 -c "
-import json, socket, sys, os
-
-data = json.load(sys.stdin)
-tool = data.get('tool_name', '')
-
-if 'cortex' in tool.lower():
-    sys.exit(0)
-
-ti = data.get('tool_input', {})
-tr = str(data.get('tool_response', ''))[:1000]
-cwd = data.get('cwd', '.')
-
-import re
-def strip_private(t):
-    t = re.sub(r'<private>.*?</private>', '', t, flags=re.DOTALL|re.IGNORECASE)
-    return re.sub(r'<private\\s*/?>', '', t, flags=re.IGNORECASE).strip()
-
-tr = strip_private(tr)
-for k, v in list(ti.items()):
-    if isinstance(v, str):
-        ti[k] = strip_private(v)
-
-if len(tr) < 20:
-    sys.exit(0)
-
-content = None
-tags = ['auto-capture']
-
-if tool == 'Bash':
-    cmd = str(ti.get('command', ''))[:150]
-    noise = ('ls', 'cd ', 'pwd', 'echo ', 'which ', 'cat ', 'head ', 'tail ', 'mkdir', 'touch ', 'chmod', 'true', 'false', 'test ')
-    if any(cmd.startswith(n) for n in noise) or not cmd:
-        sys.exit(0)
-    content = f'Command: {cmd}' + chr(10) + f'Result: {tr[:500]}'
-    tags.append('bash')
-elif tool == 'Read':
-    path = ti.get('file_path', '')
-    content = f'Read file: {path}' + chr(10) + f'Preview: {tr[:300]}'
-    tags.append('file-read')
-elif tool in ('Edit', 'Write'):
-    path = ti.get('file_path', '')
-    old = str(ti.get('old_string', ''))[:100]
-    new = str(ti.get('new_string', ''))[:100]
-    if old and new:
-        content = f'Edited {path}: replaced \\\"{old}\\\" with \\\"{new}\\\"'
-    elif tool == 'Write':
-        content = f'Created file: {path}'
-    else:
-        content = f'Modified file: {path}'
-    tags.append('file-change')
-elif tool == 'Grep':
-    pattern = ti.get('pattern', '')
-    path = ti.get('path', '')
-    content = f'Search \\\"{pattern}\\\" in {path}' + chr(10) + f'Results: {tr[:500]}'
-    tags.append('search')
-elif tool == 'Glob':
-    pattern = ti.get('pattern', '')
-    content = f'File search: {pattern}' + chr(10) + f'Found: {tr[:500]}'
-    tags.append('search')
-elif tool == 'Agent':
-    prompt = str(ti.get('prompt', ''))[:200]
-    content = f'Agent task: {prompt}' + chr(10) + f'Result: {tr[:500]}'
-    tags.append('agent')
-elif tool.startswith('mcp__'):
-    parts = tool.split('__')
-    server = parts[1] if len(parts) > 1 else 'unknown'
-    method = parts[2] if len(parts) > 2 else 'unknown'
-    content = f'MCP {server}.{method}' + chr(10) + f'Input: {json.dumps(ti)[:200]}' + chr(10) + f'Result: {tr[:400]}'
-    tags.append('mcp')
-    tags.append(server)
-elif tool in ('WebSearch', 'WebFetch'):
-    query = ti.get('query', ti.get('url', ''))
-    content = f'{tool}: {query}' + chr(10) + f'Result: {tr[:500]}'
-    tags.append('web')
-else:
-    content = f'{tool}: {json.dumps(ti)[:150]}' + chr(10) + f'Result: {tr[:400]}'
-    tags.append(tool.lower())
-
-if not content:
-    sys.exit(0)
-
-sock_path = os.path.expanduser('$SOCKET')
-
-def send(payload):
-    try:
-        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        s.settimeout(3)
-        s.connect(sock_path)
-        s.sendall(json.dumps(payload).encode())
-        s.shutdown(socket.SHUT_WR)
-        s.recv(512)
-        s.close()
-    except Exception:
-        pass
-
-send({'action':'save','content':content,'tags':tags,'cwd':cwd})
-
-CODE_EXTS = ('.py','.js','.mjs','.cjs','.jsx','.ts','.tsx','.go','.java','.swift','.kt','.kts')
-if tool in ('Read', 'Edit', 'Write'):
-    file_path = ti.get('file_path', '')
-    if file_path and file_path.lower().endswith(CODE_EXTS):
-        send({'action':'index_code','path':file_path,'cwd':cwd})
-") &
-
-exit 0
-'''
+POST_TOOL_USE_HOOK = _hook_launcher("PostToolUse")
 
 
 def _print(msg: str) -> None:
@@ -429,7 +228,53 @@ def _download_spacy_model(model_name: str = "en_core_web_sm") -> None:
         raise RuntimeError(proc.stderr.strip()[-500:] or "spacy model install failed")
 
 
-def run_setup() -> None:
+def backup_file(path: Path) -> None:
+    if path.exists():
+        import time
+        backup = path.with_name(path.name + f".cortex-backup-{time.time_ns()}")
+        shutil.copy2(path, backup)
+
+
+def write_json_safely(path: Path, data: dict) -> None:
+    import tempfile
+    path.parent.mkdir(parents=True, exist_ok=True)
+    backup_file(path)
+    with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, delete=False) as temp:
+        json.dump(data, temp, indent=2)
+        temp.write("\n")
+    Path(temp.name).replace(path)
+
+
+def merge_cortex_hooks(hooks: dict, entries: dict) -> None:
+    known = {str(HOOKS_DIR / name) for name in (
+        "session-start.sh", "pre-tool-use.sh", "post-tool-use.sh", "user-prompt-submit.sh", "stop.sh", "post-tool-failure.sh", "pre-compact.sh", "session-end.sh",
+    )}
+    for event in set(entries) | {"PreToolUse"}:
+        preserved = []
+        for group in hooks.get(event, []):
+            others = [h for h in group.get("hooks", []) if h.get("command") not in known]
+            if others:
+                preserved.append({**group, "hooks": others})
+        if event in entries:
+            preserved.append({"hooks": [entries[event]]})
+        if preserved:
+            hooks[event] = preserved
+        else:
+            hooks.pop(event, None)
+
+
+def update_memory_instructions(existing: str) -> str:
+    start, end = "<!-- cortex-memory:start -->", "<!-- cortex-memory:end -->"
+    if start in existing and end in existing:
+        before, tail = existing.split(start, 1)
+        _, after = tail.split(end, 1)
+        return before + CLAUDE_MD_CONTENT.rstrip() + after
+    if LEGACY_CLAUDE_MD_CONTENT in existing:
+        return existing.replace(LEGACY_CLAUDE_MD_CONTENT, CLAUDE_MD_CONTENT, 1)
+    return existing.rstrip() + ("\n\n" if existing.strip() else "") + CLAUDE_MD_CONTENT
+
+
+def run_setup(hooks_only: bool = False) -> None:
     print()
     print("  Cortex Claude Setup")
     print("  ====================")
@@ -459,6 +304,10 @@ def run_setup() -> None:
         session_start.write_text(SESSION_START_HOOK)
         session_start.chmod(session_start.stat().st_mode | stat.S_IEXEC)
 
+        user_prompt = HOOKS_DIR / "user-prompt-submit.sh"
+        user_prompt.write_text(USER_PROMPT_HOOK)
+        user_prompt.chmod(user_prompt.stat().st_mode | stat.S_IEXEC)
+
         pre_tool_use = HOOKS_DIR / "pre-tool-use.sh"
         pre_tool_use.write_text(PRE_TOOL_USE_HOOK)
         pre_tool_use.chmod(pre_tool_use.stat().st_mode | stat.S_IEXEC)
@@ -467,12 +316,17 @@ def run_setup() -> None:
         post_tool_use.write_text(POST_TOOL_USE_HOOK)
         post_tool_use.chmod(post_tool_use.stat().st_mode | stat.S_IEXEC)
 
+        for name, body in (("stop.sh", STOP_HOOK), ("post-tool-failure.sh", FAILURE_HOOK), ("pre-compact.sh", _hook_launcher('PreCompact')), ("session-end.sh", _hook_launcher('SessionEnd'))):
+            script = HOOKS_DIR / name
+            script.write_text(body)
+            script.chmod(script.stat().st_mode | stat.S_IEXEC)
         _ok(f"Hooks installed: {HOOKS_DIR}")
         results.append(("Hooks installed", True, ""))
     except Exception as e:
         _fail(f"Hooks installed: {e}")
         results.append(("Hooks installed", False, str(e)))
         session_start = HOOKS_DIR / "session-start.sh"
+        user_prompt = HOOKS_DIR / "user-prompt-submit.sh"
         pre_tool_use = HOOKS_DIR / "pre-tool-use.sh"
         post_tool_use = HOOKS_DIR / "post-tool-use.sh"
 
@@ -483,8 +337,8 @@ def run_setup() -> None:
             try:
                 with open(CLAUDE_CONFIG) as f:
                     mcp_config = json.load(f)
-            except json.JSONDecodeError:
-                mcp_config = {}
+            except json.JSONDecodeError as error:
+                raise ValueError("Invalid Claude MCP config; leaving it untouched") from error
 
         # Use the installed `cortex-claude` binary directly rather than
         # "python3 -m cortex_claude": when installed via `uv tool install`
@@ -492,15 +346,16 @@ def run_setup() -> None:
         # cortex_claude importable at all — it lives in the tool's own
         # venv. shutil.which resolves the absolute path so Claude Code
         # doesn't depend on PATH resolution at MCP launch time.
-        cortex_bin = shutil.which("cortex-claude") or "cortex-claude"
-        mcp_config.setdefault("mcpServers", {})["cortex"] = {
+        cortex_bin = str(Path(sys.executable).parent / "cortex-claude")
+        if not Path(cortex_bin).exists():
+            cortex_bin = shutil.which("cortex-claude") or "cortex-claude"
+        mcp_config.setdefault("mcpServers", {}).setdefault("cortex", {}).update({
             "type": "stdio",
             "command": cortex_bin,
             "args": [],
-        }
+        })
 
-        with open(CLAUDE_CONFIG, "w") as f:
-            json.dump(mcp_config, f, indent=2)
+        write_json_safely(CLAUDE_CONFIG, mcp_config)
 
         _ok(f"MCP server configured: {CLAUDE_CONFIG}")
         results.append(("MCP server configured", True, ""))
@@ -517,53 +372,25 @@ def run_setup() -> None:
             try:
                 with open(CLAUDE_SETTINGS) as f:
                     settings = json.load(f)
-            except json.JSONDecodeError:
-                settings = {}
+            except json.JSONDecodeError as error:
+                raise ValueError("Invalid Claude settings; leaving them untouched") from error
 
         hooks = settings.setdefault("hooks", {})
 
-        hooks["SessionStart"] = [
-            {
-                "matcher": "",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": str(session_start),
-                        "timeout": 10,
-                    }
-                ],
-            }
-        ]
-
-        hooks["PreToolUse"] = [
-            {
-                "matcher": "Bash",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": str(pre_tool_use),
-                        "timeout": 5,
-                    }
-                ],
-            }
-        ]
-
-        hooks["PostToolUse"] = [
-            {
-                "matcher": "",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": str(post_tool_use),
-                        "async": True,
-                        "timeout": 30,
-                    }
-                ],
-            }
-        ]
-
-        with open(CLAUDE_SETTINGS, "w") as f:
-            json.dump(settings, f, indent=2)
+        entries = {
+            "SessionStart": {"type": "command", "command": str(session_start), "timeout": 5},
+            "UserPromptSubmit": {"type": "command", "command": str(user_prompt), "timeout": 3},
+            "PostToolUse": {"type": "command", "command": str(post_tool_use), "timeout": 3},
+            "PostToolUseFailure": {"type": "command", "command": str(HOOKS_DIR / "post-tool-failure.sh"), "timeout": 3},
+            "Stop": {"type": "command", "command": str(HOOKS_DIR / "stop.sh"), "timeout": 5},
+            "PreCompact": {"type": "command", "command": str(HOOKS_DIR / "pre-compact.sh"), "timeout": 5},
+            "SessionEnd": {"type": "command", "command": str(HOOKS_DIR / "session-end.sh"), "timeout": 3},
+        }
+        # Keep unrelated hooks. Re-running setup replaces only Cortex entries.
+        # PreToolUse is no longer installed: rewriting commands changes what
+        # users/tools asked for. Token reduction belongs in retrieval.
+        merge_cortex_hooks(hooks, entries)
+        write_json_safely(CLAUDE_SETTINGS, settings)
 
         _ok(f"Hooks configured: {CLAUDE_SETTINGS}")
         results.append(("Hooks configured in settings.json", True, ""))
@@ -575,22 +402,23 @@ def run_setup() -> None:
     try:
         CLAUDE_MD.parent.mkdir(parents=True, exist_ok=True)
 
-        cortex_marker = "# Cortex Memory"
-        if CLAUDE_MD.exists():
-            existing = CLAUDE_MD.read_text()
-            if cortex_marker in existing:
-                _skip(f"CLAUDE.md already has Cortex instructions")
-            else:
-                with open(CLAUDE_MD, "a") as f:
-                    f.write("\n\n" + CLAUDE_MD_CONTENT)
-                _ok(f"Cortex instructions appended to {CLAUDE_MD}")
-        else:
-            CLAUDE_MD.write_text(CLAUDE_MD_CONTENT)
-            _ok(f"CLAUDE.md created: {CLAUDE_MD}")
+        existing = CLAUDE_MD.read_text() if CLAUDE_MD.exists() else ""
+        updated = update_memory_instructions(existing)
+        if updated != existing:
+            backup_file(CLAUDE_MD)
+            CLAUDE_MD.write_text(updated)
+        _ok(f"Cortex instructions updated: {CLAUDE_MD}")
         results.append(("CLAUDE.md instructions", True, ""))
     except Exception as e:
         _fail(f"CLAUDE.md instructions: {e}")
         results.append(("CLAUDE.md instructions", False, str(e)))
+
+    if hooks_only:
+        failed = [name for name, ok, _ in results if not ok]
+        if failed:
+            raise RuntimeError("Setup failed: " + ", ".join(failed))
+        _ok("Shared learning hooks installed. Restart Claude Code to activate.")
+        return
 
     # 6. Download spaCy model
     _print("Downloading spaCy model (en_core_web_sm)...")
@@ -621,7 +449,25 @@ def run_setup() -> None:
         _fail(f"Embedding model download: {e}")
         results.append(("Embedding model (all-MiniLM-L6-v2)", False, str(e)))
 
-    # 8. Start daemon
+    # 8. Prepare the shared-learning model. Runtime hooks never download it.
+    try:
+        from cortex_claude.learning.config import LearningConfig
+        from cortex_claude.learning.semantic import SemanticService
+        learning_config = LearningConfig.load(CORTEX_HOME)
+        if learning_config.semantic_enabled:
+            _print("Preparing local multilingual learning model...")
+            service = SemanticService(learning_config)
+            ready = service.prepare() or service.prepare(download=True)
+            results.append(("Multilingual learning model", ready, "" if ready else service.status))
+            if ready:
+                _ok("Multilingual learning model ready")
+            else:
+                _fail("Semantic model unavailable; lexical learning still works. Retry: cortex-claude learning prepare")
+            del service  # The daemon owns the resident copy.
+    except Exception as e:
+        results.append(("Multilingual learning model", False, str(e)))
+
+    # 9. Start daemon
     _print("Starting Cortex daemon...")
     try:
         from cortex_claude.daemon import ensure_running, is_running

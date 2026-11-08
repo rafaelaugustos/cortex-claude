@@ -1,19 +1,23 @@
 from __future__ import annotations
 
 import json
+import logging
 import mimetypes
 import os
 import re
 import sqlite3
 import threading
 import time
+from functools import wraps
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 import sqlite_vec
 
-CORTEX_HOME = Path(os.environ.get("CORTEX_HOME", str(Path.home() / ".cortex-claude")))
+from cortex_claude.learning.store import LearningStore
+
+CORTEX_HOME = Path(os.environ.get("CORTEX_HOME", str(Path.home() / ".cortex-claude"))).expanduser()
 STATIC_DIR = (Path(__file__).parent / "static").resolve()
 
 # Nothing the browser renders benefits from more than this, and every element
@@ -51,16 +55,22 @@ def _connect(db_path: Path) -> sqlite3.Connection:
     conn = cache.get(key)
     if conn is None:
         conn = sqlite3.connect(key, timeout=5.0)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys=ON")
-        conn.execute("PRAGMA busy_timeout=5000")
-        # memory_vectors is a vec0 virtual table: without the extension the
-        # table is unreadable and deletes against it fail, orphaning vectors.
         try:
-            conn.enable_load_extension(True)
-            sqlite_vec.load(conn)
-        finally:
-            conn.enable_load_extension(False)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA foreign_keys=ON")
+            conn.execute("PRAGMA busy_timeout=5000")
+            # memory_vectors is a vec0 virtual table: without the extension the
+            # table is unreadable and deletes against it fail, orphaning vectors.
+            try:
+                conn.enable_load_extension(True)
+                sqlite_vec.load(conn)
+            finally:
+                conn.enable_load_extension(False)
+            from cortex_claude.storage.migrations import initialize_schema
+            initialize_schema(conn)
+        except Exception:
+            conn.close()
+            raise
         cache[key] = conn
     return conn
 
@@ -75,13 +85,10 @@ def _targets(scope: str | None) -> list[tuple[str, Path]]:
 def _query(scope: str | None, sql: str, params: tuple = ()) -> list[dict]:
     rows: list[dict] = []
     for name, path in _targets(scope):
-        try:
-            for row in _connect(path).execute(sql, params):
-                d = dict(row)
-                d["_scope"] = name
-                rows.append(d)
-        except sqlite3.Error:
-            continue
+        for row in _connect(path).execute(sql, params):
+            d = dict(row)
+            d["_scope"] = name
+            rows.append(d)
     return rows
 
 
@@ -153,13 +160,10 @@ def api_overview() -> dict:
     total_mem = total_facts = total_size = 0
 
     for name, path in _scope_databases():
-        try:
-            conn = _connect(path)
-            mem = conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
-            facts = conn.execute("SELECT COUNT(*) FROM facts").fetchone()[0]
-            clusters = conn.execute("SELECT COUNT(*) FROM clusters").fetchone()[0]
-        except sqlite3.Error:
-            continue
+        conn = _connect(path)
+        mem = conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+        facts = conn.execute("SELECT COUNT(*) FROM facts").fetchone()[0]
+        clusters = conn.execute("SELECT COUNT(*) FROM clusters").fetchone()[0]
         size = path.stat().st_size if path.exists() else 0
         scopes.append(
             {
@@ -296,14 +300,11 @@ def _build_graph(facts: list[dict], max_nodes: int = MAX_GRAPH_NODES) -> dict:
 
 def api_cluster_detail(cluster_id: int, scope: str | None) -> dict:
     for name, path in _targets(scope):
-        try:
-            conn = _connect(path)
-            cluster = conn.execute(
-                "SELECT id, scope, label, member_count, updated_at FROM clusters WHERE id = ?",
-                (cluster_id,),
-            ).fetchone()
-        except sqlite3.Error:
-            continue
+        conn = _connect(path)
+        cluster = conn.execute(
+            "SELECT id, scope, label, member_count, updated_at FROM clusters WHERE id = ?",
+            (cluster_id,),
+        ).fetchone()
         if cluster is None:
             continue
 
@@ -352,23 +353,24 @@ def api_memories(
     items: list[dict] = []
     total = 0
     for name, path in _targets(scope):
-        try:
-            conn = _connect(path)
-            total += conn.execute(
-                f"SELECT COUNT(*) FROM memories{where}", tuple(params)
-            ).fetchone()[0]
-            for row in conn.execute(
-                f"SELECT {MEMORY_COLS} FROM memories{where} ORDER BY {order} "
-                "LIMIT ? OFFSET ?",
-                (*params, limit, offset),
-            ):
-                d = dict(row)
-                d["_scope"] = name
-                items.append(d)
-        except sqlite3.Error:
-            continue
+        conn = _connect(path)
+        total += conn.execute(
+            f"SELECT COUNT(*) FROM memories{where}", tuple(params)
+        ).fetchone()[0]
+        for row in conn.execute(
+            f"SELECT {MEMORY_COLS} FROM memories{where} ORDER BY {order}, id {'ASC' if sort == 'oldest' else 'DESC'} "
+            "LIMIT ?",
+            (*params, offset + limit),
+        ):
+            d = dict(row)
+            d["_scope"] = name
+            items.append(d)
 
-    return {"items": items[:limit], "total": total}
+    # Merge the ordered prefix of every database before applying the global
+    # page offset; otherwise later pages lose records from smaller scopes.
+    sort_key = {"recent": "created_at", "oldest": "created_at", "relevance": "decay_score", "accessed": "accessed_at", "largest": "size"}.get(sort, "created_at")
+    items.sort(key=lambda item: (item[sort_key], item["id"]), reverse=sort != "oldest")
+    return {"items": items[offset:offset + limit], "total": total}
 
 
 def api_entity(name: str) -> dict:
@@ -396,13 +398,10 @@ def api_entity(name: str) -> dict:
 
 def api_memory(memory_id: str) -> dict:
     for name, path in _scope_databases():
-        try:
-            conn = _connect(path)
-            row = conn.execute(
-                f"SELECT {MEMORY_COLS} FROM memories WHERE id = ?", (memory_id,)
-            ).fetchone()
-        except sqlite3.Error:
-            continue
+        conn = _connect(path)
+        row = conn.execute(
+            f"SELECT {MEMORY_COLS} FROM memories WHERE id = ?", (memory_id,)
+        ).fetchone()
         if row is None:
             continue
         facts = [
@@ -454,6 +453,25 @@ def api_delete_memory(memory_id: str) -> dict:
 
 
 def api_update_memory(memory_id: str, data: dict) -> dict:
+    if "content" in data:
+        if not isinstance(data["content"], str):
+            return {"ok": False, "error": "content must be text"}
+        tags = data.get("tags")
+        if tags is not None and (not isinstance(tags, list) or not all(isinstance(t, str) for t in tags)):
+            return {"ok": False, "error": "tags must be a list of strings"}
+        # Editing the archive must use the same derivation pipeline as saving:
+        # direct SQL left summaries, facts and vector search describing old text.
+        from cortex_claude.core.engine import CortexEngine
+        engine = CortexEngine(base_path=CORTEX_HOME)
+        try:
+            for scope, path in _scope_databases():
+                if _connect(path).execute("SELECT 1 FROM memories WHERE id=?", (memory_id,)).fetchone():
+                    return {"ok": engine.update_memory(memory_id, data["content"], scope, tags), "updated": memory_id}
+            return {"ok": False, "error": "memory not found"}
+        except (ValueError, sqlite3.Error) as error:
+            return {"ok": False, "error": str(error)}
+        finally:
+            engine.close()
     updates: list[str] = []
     params: list = []
     if "content" in data:
@@ -493,11 +511,8 @@ def _cleanup_matches(rules: list[dict]) -> list[tuple[str, Path, list[str], int]
     out: list[tuple[str, Path, list[str], int]] = []
 
     for name, path in _scope_databases():
-        try:
-            conn = _connect(path)
-            _register_regexp(conn)
-        except sqlite3.Error:
-            continue
+        conn = _connect(path)
+        _register_regexp(conn)
 
         ids: dict[str, int] = {}
         for rule in rules:
@@ -525,13 +540,10 @@ def _cleanup_matches(rules: list[dict]) -> list[tuple[str, Path, list[str], int]
             else:
                 continue
 
-            try:
-                for row in conn.execute(
-                    f"SELECT id, LENGTH(content) FROM memories{where}", tuple(params)
-                ):
-                    ids[row[0]] = row[1] or 0
-            except sqlite3.Error:
-                continue
+            for row in conn.execute(
+                f"SELECT id, LENGTH(content) FROM memories{where}", tuple(params)
+            ):
+                ids[row[0]] = row[1] or 0
 
         if ids:
             out.append((name, path, list(ids), sum(ids.values())))
@@ -548,18 +560,15 @@ def api_cleanup_preview(rules: list[dict]) -> dict:
     for name, path, ids, _ in matches:
         if len(sample) >= 8:
             break
-        try:
-            conn = _connect(path)
-            marks = ",".join("?" for _ in ids[:8])
-            for row in conn.execute(
-                f"SELECT id, content, tags, created_at FROM memories WHERE id IN ({marks})",
-                ids[:8],
-            ):
-                d = dict(row)
-                d["_scope"] = name
-                sample.append(d)
-        except sqlite3.Error:
-            continue
+        conn = _connect(path)
+        marks = ",".join("?" for _ in ids[:8])
+        for row in conn.execute(
+            f"SELECT id, content, tags, created_at FROM memories WHERE id IN ({marks})",
+            ids[:8],
+        ):
+            d = dict(row)
+            d["_scope"] = name
+            sample.append(d)
 
     return {
         "count": total,
@@ -593,6 +602,25 @@ _ALLOWED_HOSTS = re.compile(r"^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$", re.IGN
 _ALLOWED_ORIGINS = re.compile(
     r"^https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$", re.IGNORECASE
 )
+
+
+def _storage_errors(handler):
+    @wraps(handler)
+    def guarded(self):
+        try:
+            return handler(self)
+        except (BrokenPipeError, ConnectionResetError):
+            return
+        except (OSError, sqlite3.Error):
+            logging.getLogger(__name__).exception("Dashboard storage request failed")
+            return self._error(503, "Não foi possível acessar a memória. Confira o estado em Recuperação e tente novamente.")
+        finally:
+            # sqlite's context manager commits/rolls back; it does not close.
+            # Release every request's scoped connections, including failures.
+            for connection in getattr(_local, 'conns', {}).values():
+                connection.close()
+            _local.conns = {}
+    return guarded
 
 
 def _int(params: dict, key: str, default: int, cap: int | None = None) -> int:
@@ -638,12 +666,14 @@ class CortexHandler(BaseHTTPRequestHandler):
         if length <= 0 or length > 1_000_000:
             return {}
         try:
-            return json.loads(self.rfile.read(length))
+            value = json.loads(self.rfile.read(length))
+            return value if isinstance(value, dict) else {}
         except (json.JSONDecodeError, UnicodeDecodeError):
             return {}
 
     # ── verbs ─────────────────────────────────────────────────
 
+    @_storage_errors
     def do_GET(self):
         if not self._origin_ok():
             return self._error(403, "forbidden")
@@ -653,10 +683,68 @@ class CortexHandler(BaseHTTPRequestHandler):
         else:
             self._static(parsed.path)
 
+    @_storage_errors
     def do_POST(self):
         if not self._origin_ok():
             return self._error(403, "forbidden")
         path = urlparse(self.path).path
+        if path.startswith('/api/recovery/'):
+            try:
+                from cortex_claude.reliability import backups
+                from cortex_claude.reliability.queue import retry
+                body = self._body()
+                if path == '/api/recovery/self-test':
+                    from cortex_claude.reliability.probe import run
+                    try:
+                        result = run(CORTEX_HOME)
+                    except BlockingIOError:
+                        return self._error(409, 'Uma prova de memória já está em andamento.')
+                elif path == '/api/recovery/diagnose':
+                    from cortex_claude.reliability.diagnostics import sample
+                    result = sample(CORTEX_HOME)
+                elif path == '/api/recovery/backup':
+                    result = backups.create(CORTEX_HOME)
+                    result['restore_check'] = backups.test_restore(CORTEX_HOME, result['id'])
+                elif path == '/api/recovery/verify':
+                    result = backups.test_restore(CORTEX_HOME, str(body.get('id', '')))
+                elif path == '/api/recovery/restore':
+                    destination = CORTEX_HOME / 'restored' / ('restore-' + str(time.time_ns()))
+                    result = backups.restore(CORTEX_HOME, str(body.get('id', '')), destination)
+                elif path == '/api/recovery/retry':
+                    result = retry(CORTEX_HOME)
+                else:
+                    return self._error(404, 'not found')
+                return self._json(result)
+            except (ValueError, TypeError, KeyError) as error:
+                return self._error(400, str(error))
+        if path.startswith(("/api/learning/", "/api/conflicts/", "/api/tasks/", "/api/projects/")):
+            try:
+                body = self._body()
+                with LearningStore(CORTEX_HOME) as learning:
+                    if path == "/api/projects/refresh":
+                        from cortex_claude.learning.projects import refresh_project
+                        origin = body.get("origin")
+                        if not isinstance(origin, str) or not Path(origin).is_absolute():
+                            raise ValueError("Informe o caminho absoluto de um projeto local")
+                        result = refresh_project(learning, origin)
+                    elif path.startswith("/api/learning/") and path.endswith("/feedback"):
+                        from cortex_claude.learning.selection import feedback
+                        lesson_id = unquote(path[len("/api/learning/"):-len("/feedback")])
+                        sid = body.get("session_id", "")
+                        if not isinstance(sid, str) or not sid.startswith("dashboard:") or len(sid) > 100:
+                            raise ValueError("A dashboard feedback identity is required")
+                        result = feedback(learning, lesson_id, str(CORTEX_HOME), sid, body.get("assessment", ""), source="human")
+                    elif path.startswith("/api/conflicts/") and path.endswith("/resolve"):
+                        from cortex_claude.learning.conflicts import resolve
+                        result = resolve(learning, unquote(path[len("/api/conflicts/"):-len("/resolve")]), body.get("choice", ""), body.get("conditions"))
+                    elif path.startswith("/api/tasks/"):
+                        from cortex_claude.learning.tasks import update_state
+                        result = update_state(learning, unquote(path[len("/api/tasks/"):]), body.get("action", ""), body.get("expected_revision", 0))
+                    else:
+                        return self._error(404, "not found")
+                return self._json(result)
+            except (ValueError, TypeError) as error:
+                return self._error(400, str(error))
         if path == "/api/cleanup/preview":
             self._json(api_cleanup_preview(self._body().get("rules", [])))
         elif path == "/api/cleanup/execute":
@@ -664,6 +752,7 @@ class CortexHandler(BaseHTTPRequestHandler):
         else:
             self._error(404, "not found")
 
+    @_storage_errors
     def do_PUT(self):
         if not self._origin_ok():
             return self._error(403, "forbidden")
@@ -674,10 +763,15 @@ class CortexHandler(BaseHTTPRequestHandler):
         else:
             self._error(404, "not found")
 
+    @_storage_errors
     def do_DELETE(self):
         if not self._origin_ok():
             return self._error(403, "forbidden")
         path = urlparse(self.path).path
+        if path.startswith("/api/learning/"):
+            with LearningStore(CORTEX_HOME) as learning:
+                deleted = learning.forget(unquote(path[len("/api/learning/") :]))
+            return self._json({"ok": deleted})
         if path.startswith("/api/memory/"):
             memory_id = unquote(path[len("/api/memory/") :])
             self._json(api_delete_memory(memory_id))
@@ -688,6 +782,42 @@ class CortexHandler(BaseHTTPRequestHandler):
 
     def _route_get(self, path: str, params: dict):
         scope = _str(params, "scope")
+        if path == '/api/health':
+            from cortex_claude.reliability.health import report
+            return self._json(report(CORTEX_HOME))
+
+        if path == "/api/projects":
+            from cortex_claude.learning.projects import list_projects
+            with LearningStore(CORTEX_HOME) as learning:
+                return self._json({"items": list_projects(learning)})
+
+        if path == "/api/executions":
+            query = _str(params, "q") or ""
+            limit, offset = _int(params, "limit", 30, MAX_PAGE_SIZE), _int(params, "offset", 0)
+            where, args = ("WHERE content LIKE ?", (f"%{query}%",)) if query else ("", ())
+            counts = _query(scope, f"SELECT COUNT(*) AS count FROM execution_history {where}", args)
+            items = _query(scope, f"SELECT id,content,created_at FROM execution_history {where} ORDER BY created_at DESC,id LIMIT ?", (*args, limit + offset))
+            items.sort(key=lambda item: (-item["created_at"], item["id"], item["_scope"]))
+            return self._json({"items": items[offset:offset + limit], "total": sum(row["count"] for row in counts)})
+
+        if path == "/api/learning":
+            with LearningStore(CORTEX_HOME) as learning:
+                return self._json({"lessons": learning.list(limit=100), "stats": learning.stats()})
+
+        if path == "/api/conflicts":
+            from cortex_claude.learning.conflicts import list_conflicts
+            with LearningStore(CORTEX_HOME) as learning:
+                return self._json({"items": list_conflicts(learning)})
+
+        if path == "/api/tasks":
+            from cortex_claude.learning.tasks import list_tasks
+            with LearningStore(CORTEX_HOME) as learning:
+                return self._json({"items": list_tasks(learning)})
+
+        if path.startswith("/api/learning/"):
+            with LearningStore(CORTEX_HOME) as learning:
+                result = learning.inspect(unquote(path[len("/api/learning/"):]))
+            return self._json(result) if result else self._error(404, "not found")
 
         if path == "/api/overview":
             return self._json(api_overview())
@@ -776,6 +906,7 @@ class CortexHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 
@@ -789,6 +920,8 @@ class CortexHandler(BaseHTTPRequestHandler):
 def run_web(port: int = 37800):
     server = ThreadingHTTPServer(("127.0.0.1", port), CortexHandler)
     server.daemon_threads = True
+    from cortex_claude.reliability.files import atomic_write
+    atomic_write(CORTEX_HOME / 'web.pid', str(os.getpid()).encode())
     print(f"  Cortex Dashboard: http://localhost:{port}")
     try:
         server.serve_forever()

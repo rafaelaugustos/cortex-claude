@@ -1,0 +1,497 @@
+{
+  "version": "0.14.0",
+  "reports": [
+    {
+      "client": "claude",
+      "checks": [
+        {
+          "task": "expiry-units-v1",
+          "bug_detected": true,
+          "past_solution_passed": true,
+          "shared_retrieval_tokens": 73
+        }
+      ],
+      "runs": [
+        {
+          "id": "0880ab65-973a-493d-b499-3c6629edd1b0",
+          "task": "expiry-units-v1:claude:859bb367",
+          "variant": "baseline",
+          "client": "claude",
+          "model": "claude-haiku-5-5",
+          "quality": 1,
+          "elapsed_ms": 14687.46,
+          "input_tokens": 10,
+          "output_tokens": 1286,
+          "cache_read_tokens": 44081,
+          "cache_creation_tokens": 12009,
+          "tool_calls": 5,
+          "failures": 0,
+          "cost_usd": 0.0034866100000000002,
+          "finish_reason": "success",
+          "cli_exit_code": 0,
+          "grader": "----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK",
+          "solution": {
+            "subject.py": "def expired(record, now_seconds):\n    # now_seconds is always in seconds. Records declare unit \"milliseconds\" or\n    # \"seconds\"; a missing unit means seconds. Expiry is inclusive.\n    if record.get(\"unit\", \"seconds\") == \"milliseconds\":\n        return now_seconds * 1000 >= record[\"expires_at\"]\n    return now_seconds >= record[\"expires_at\"]\n"
+          },
+          "efficiency": {
+            "reads": {
+              "full": 0,
+              "delta": 0,
+              "unchanged": 0,
+              "emitted_tokens": 0,
+              "avoided_tokens": 0
+            },
+            "selection": {},
+            "injected_tokens": 0
+          }
+        },
+        {
+          "id": "a62de5a8-06f1-4362-a1a2-55074f530a7e",
+          "task": "expiry-units-v1:claude:859bb367",
+          "variant": "memory",
+          "client": "claude",
+          "model": "claude-haiku-5-5",
+          "quality": 1,
+          "elapsed_ms": 10436.14,
+          "input_tokens": 6,
+          "output_tokens": 850,
+          "cache_read_tokens": 31282,
+          "cache_creation_tokens": 1815,
+          "tool_calls": 4,
+          "failures": 1,
+          "cost_usd": 0.00110142,
+          "finish_reason": "success",
+          "cli_exit_code": 0,
+          "grader": "----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK",
+          "solution": {
+            "subject.py": "def expired(record, now_seconds):\n    expires_at = record[\"expires_at\"]\n    if record.get(\"unit\", \"seconds\") == \"milliseconds\":\n        expires_at = expires_at / 1000\n    return now_seconds >= expires_at\n"
+          },
+          "efficiency": {
+            "reads": {
+              "full": 0,
+              "delta": 0,
+              "unchanged": 0,
+              "emitted_tokens": 0,
+              "avoided_tokens": 0
+            },
+            "selection": {
+              "delivered": 1
+            },
+            "injected_tokens": 73
+          }
+        }
+      ],
+      "comparisons": [
+        {
+          "task": "expiry-units-v1:claude:859bb367",
+          "model": "claude-haiku-5-5",
+          "baseline": {
+            "task": "expiry-units-v1:claude:859bb367",
+            "model": "claude-haiku-5-5",
+            "variant": "baseline",
+            "runs": 1,
+            "quality": 1.0,
+            "elapsed_ms": 14687.46,
+            "tokens": 57386.0,
+            "tool_calls": 5.0,
+            "failures": 0.0,
+            "cost_usd": 0.0034866100000000002
+          },
+          "memory": {
+            "task": "expiry-units-v1:claude:859bb367",
+            "model": "claude-haiku-5-5",
+            "variant": "memory",
+            "runs": 1,
+            "quality": 1.0,
+            "elapsed_ms": 10436.14,
+            "tokens": 33953.0,
+            "tool_calls": 4.0,
+            "failures": 1.0,
+            "cost_usd": 0.00110142
+          },
+          "token_change_percent": -40.83,
+          "quality_preserved": true,
+          "note": "Observed task samples; not a guarantee of savings or subscription limits"
+        }
+      ],
+      "regression": {
+        "evaluated": true,
+        "passed": true,
+        "max_increase_percent": 25,
+        "failures": []
+      },
+      "limits": "Synthetic tasks with independent graders; identical source, task prompt and tools within each client pair. Separate seed databases. Codex uses explicit context retrieval with user hooks disabled, not automatic hook activation. Codex cached input is subtracted from input before aggregation. Codex has a 180-second timeout, no USD cap or inferred cost; --budget caps Claude only. Results from different clients are not paired. Small samples do not establish general savings; no personal project data is sent."
+    },
+    {
+      "client": "codex",
+      "checks": [
+        {
+          "task": "expiry-units-v1",
+          "bug_detected": true,
+          "past_solution_passed": true,
+          "shared_retrieval_tokens": 73
+        }
+      ],
+      "runs": [
+        {
+          "id": "7dd0c22a-8cf7-442b-a891-add310669db1",
+          "task": "expiry-units-v1:codex:1bd6481a",
+          "variant": "baseline",
+          "client": "codex",
+          "model": "gpt-6-astra",
+          "quality": 1,
+          "elapsed_ms": 18355.8,
+          "input_tokens": 17071,
+          "output_tokens": 339,
+          "cache_read_tokens": 48256,
+          "cache_creation_tokens": 0,
+          "tool_calls": 4,
+          "failures": 0,
+          "cost_usd": null,
+          "finish_reason": "success",
+          "cli_exit_code": 0,
+          "grader": "----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK",
+          "solution": {
+            "subject.py": "def expired(record, now_seconds):\n    expires_at = record[\"expires_at\"]\n    if record.get(\"unit\", \"seconds\") == \"milliseconds\":\n        expires_at /= 1000\n    return now_seconds >= expires_at\n"
+          },
+          "efficiency": {
+            "reads": {
+              "full": 0,
+              "delta": 0,
+              "unchanged": 0,
+              "emitted_tokens": 0,
+              "avoided_tokens": 0
+            },
+            "selection": {},
+            "injected_tokens": 0
+          }
+        },
+        {
+          "id": "d1f4ea7e-490f-412e-83ba-bd796ff67860",
+          "task": "expiry-units-v1:codex:1bd6481a",
+          "variant": "memory",
+          "client": "codex",
+          "model": "gpt-6-astra",
+          "quality": 1,
+          "elapsed_ms": 16439.45,
+          "input_tokens": 21010,
+          "output_tokens": 329,
+          "cache_read_tokens": 44544,
+          "cache_creation_tokens": 0,
+          "tool_calls": 4,
+          "failures": 0,
+          "cost_usd": null,
+          "finish_reason": "success",
+          "cli_exit_code": 0,
+          "grader": "----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK",
+          "solution": {
+            "subject.py": "def expired(record, now_seconds):\n    expires_at = record[\"expires_at\"]\n    if record.get(\"unit\") == \"milliseconds\":\n        expires_at /= 1000\n    return now_seconds >= expires_at\n"
+          },
+          "efficiency": {
+            "reads": {
+              "full": 0,
+              "delta": 0,
+              "unchanged": 0,
+              "emitted_tokens": 0,
+              "avoided_tokens": 0
+            },
+            "selection": {
+              "delivered": 1
+            },
+            "injected_tokens": 73
+          }
+        }
+      ],
+      "comparisons": [
+        {
+          "task": "expiry-units-v1:codex:1bd6481a",
+          "model": "gpt-6-astra",
+          "baseline": {
+            "task": "expiry-units-v1:codex:1bd6481a",
+            "model": "gpt-6-astra",
+            "variant": "baseline",
+            "runs": 1,
+            "quality": 1.0,
+            "elapsed_ms": 18355.8,
+            "tokens": 65666.0,
+            "tool_calls": 4.0,
+            "failures": 0.0,
+            "cost_usd": null
+          },
+          "memory": {
+            "task": "expiry-units-v1:codex:1bd6481a",
+            "model": "gpt-6-astra",
+            "variant": "memory",
+            "runs": 1,
+            "quality": 1.0,
+            "elapsed_ms": 16439.45,
+            "tokens": 65883.0,
+            "tool_calls": 4.0,
+            "failures": 0.0,
+            "cost_usd": null
+          },
+          "token_change_percent": 0.33,
+          "quality_preserved": true,
+          "note": "Observed task samples; not a guarantee of savings or subscription limits"
+        }
+      ],
+      "regression": {
+        "evaluated": true,
+        "passed": true,
+        "max_increase_percent": 25,
+        "failures": []
+      },
+      "limits": "Synthetic tasks with independent graders; identical source, task prompt and tools within each client pair. Separate seed databases. Codex uses explicit context retrieval with user hooks disabled, not automatic hook activation. Codex cached input is subtracted from input before aggregation. Codex has a 180-second timeout, no USD cap or inferred cost; --budget caps Claude only. Results from different clients are not paired. Small samples do not establish general savings; no personal project data is sent."
+    },
+    {
+      "client": "claude",
+      "checks": [
+        {
+          "task": "money-multifile-v1",
+          "bug_detected": true,
+          "past_solution_passed": true,
+          "shared_retrieval_tokens": 81
+        }
+      ],
+      "runs": [
+        {
+          "id": "6eb176e7-b063-49a2-9c61-edbf4cafd633",
+          "task": "money-multifile-v1:claude:31dc7355",
+          "variant": "baseline",
+          "client": "claude",
+          "model": "claude-haiku-5-5",
+          "quality": 1,
+          "elapsed_ms": 16588.69,
+          "input_tokens": 10,
+          "output_tokens": 1838,
+          "cache_read_tokens": 54795,
+          "cache_creation_tokens": 3646,
+          "tool_calls": 8,
+          "failures": 0,
+          "cost_usd": 0.00219715,
+          "finish_reason": "success",
+          "cli_exit_code": 0,
+          "grader": "----------------------------------------------------------------------\nRan 3 tests in 0.000s\n\nOK",
+          "solution": {
+            "money.py": "from decimal import Decimal, ROUND_HALF_UP\n\n\ndef cents(value):\n    \"\"\"Convert a decimal amount (str, int, float or Decimal) to integer cents.\n\n    Uses ROUND_HALF_UP, so ties round away from zero (including negatives).\n    Floats are converted via their shortest repr to avoid binary artifacts.\n    \"\"\"\n    amount = Decimal(str(value)) * 100\n    return int(amount.to_integral_value(rounding=ROUND_HALF_UP))\n",
+            "cart.py": "from money import cents\ndef total(items):\n    return sum(cents(item[\"price\"]) * item[\"quantity\"] for item in items)\n",
+            "invoice.py": "from cart import total\ndef invoice(items):\n    return {\"currency\": \"BRL\", \"total_cents\": total(items)}\n"
+          },
+          "efficiency": {
+            "reads": {
+              "full": 0,
+              "delta": 0,
+              "unchanged": 0,
+              "emitted_tokens": 0,
+              "avoided_tokens": 0
+            },
+            "selection": {},
+            "injected_tokens": 0
+          }
+        },
+        {
+          "id": "c61313e5-718e-4b26-9106-7e9a545208c2",
+          "task": "money-multifile-v1:claude:31dc7355",
+          "variant": "memory",
+          "client": "claude",
+          "model": "claude-haiku-5-5",
+          "quality": 1,
+          "elapsed_ms": 18016.94,
+          "input_tokens": 10,
+          "output_tokens": 2207,
+          "cache_read_tokens": 55383,
+          "cache_creation_tokens": 3656,
+          "tool_calls": 9,
+          "failures": 0,
+          "cost_usd": 0.00238953,
+          "finish_reason": "success",
+          "cli_exit_code": 0,
+          "grader": "----------------------------------------------------------------------\nRan 3 tests in 0.000s\n\nOK",
+          "solution": {
+            "money.py": "from decimal import Decimal, ROUND_HALF_UP\n\n\ndef cents(value):\n    \"\"\"Convert a decimal amount to integer cents, rounding half up (away from zero on ties).\"\"\"\n    amount = Decimal(str(value)) * 100\n    return int(amount.quantize(Decimal(\"1\"), rounding=ROUND_HALF_UP))\n",
+            "cart.py": "from money import cents\ndef total(items):\n    return sum(cents(item[\"price\"]) * item[\"quantity\"] for item in items)\n",
+            "invoice.py": "from cart import total\ndef invoice(items):\n    return {\"currency\": \"BRL\", \"total_cents\": total(items)}\n"
+          },
+          "efficiency": {
+            "reads": {
+              "full": 0,
+              "delta": 0,
+              "unchanged": 0,
+              "emitted_tokens": 0,
+              "avoided_tokens": 0
+            },
+            "selection": {
+              "delivered": 1
+            },
+            "injected_tokens": 81
+          }
+        }
+      ],
+      "comparisons": [
+        {
+          "task": "money-multifile-v1:claude:31dc7355",
+          "model": "claude-haiku-5-5",
+          "baseline": {
+            "task": "money-multifile-v1:claude:31dc7355",
+            "model": "claude-haiku-5-5",
+            "variant": "baseline",
+            "runs": 1,
+            "quality": 1.0,
+            "elapsed_ms": 16588.69,
+            "tokens": 60289.0,
+            "tool_calls": 8.0,
+            "failures": 0.0,
+            "cost_usd": 0.00219715
+          },
+          "memory": {
+            "task": "money-multifile-v1:claude:31dc7355",
+            "model": "claude-haiku-5-5",
+            "variant": "memory",
+            "runs": 1,
+            "quality": 1.0,
+            "elapsed_ms": 18016.94,
+            "tokens": 61256.0,
+            "tool_calls": 9.0,
+            "failures": 0.0,
+            "cost_usd": 0.00238953
+          },
+          "token_change_percent": 1.6,
+          "quality_preserved": true,
+          "note": "Observed task samples; not a guarantee of savings or subscription limits"
+        }
+      ],
+      "regression": {
+        "evaluated": true,
+        "passed": true,
+        "max_increase_percent": 25,
+        "failures": []
+      },
+      "limits": "Synthetic tasks with independent graders; identical source, task prompt and tools within each client pair. Separate seed databases. Codex uses explicit context retrieval with user hooks disabled, not automatic hook activation. Codex cached input is subtracted from input before aggregation. Codex has a 180-second timeout, no USD cap or inferred cost; --budget caps Claude only. Results from different clients are not paired. Small samples do not establish general savings; no personal project data is sent."
+    },
+    {
+      "client": "codex",
+      "checks": [
+        {
+          "task": "money-multifile-v1",
+          "bug_detected": true,
+          "past_solution_passed": true,
+          "shared_retrieval_tokens": 81
+        }
+      ],
+      "runs": [
+        {
+          "id": "2d4f7eca-40ab-4753-9623-8ec90b114a48",
+          "task": "money-multifile-v1:codex:d1b23c97",
+          "variant": "baseline",
+          "client": "codex",
+          "model": "gpt-6-astra",
+          "quality": 1,
+          "elapsed_ms": 18862.73,
+          "input_tokens": 5014,
+          "output_tokens": 489,
+          "cache_read_tokens": 60928,
+          "cache_creation_tokens": 0,
+          "tool_calls": 4,
+          "failures": 0,
+          "cost_usd": null,
+          "finish_reason": "success",
+          "cli_exit_code": 0,
+          "grader": "----------------------------------------------------------------------\nRan 3 tests in 0.000s\n\nOK",
+          "solution": {
+            "money.py": "from decimal import Decimal, ROUND_HALF_UP\n\n\ndef cents(value):\n    return int((Decimal(str(value)) * 100).to_integral_value(rounding=ROUND_HALF_UP))\n",
+            "cart.py": "from money import cents\n\n\ndef total(items):\n    return sum(cents(item[\"price\"]) * item[\"quantity\"] for item in items)\n",
+            "invoice.py": "from cart import total\ndef invoice(items):\n    return {\"currency\": \"BRL\", \"total_cents\": total(items)}\n"
+          },
+          "efficiency": {
+            "reads": {
+              "full": 0,
+              "delta": 0,
+              "unchanged": 0,
+              "emitted_tokens": 0,
+              "avoided_tokens": 0
+            },
+            "selection": {},
+            "injected_tokens": 0
+          }
+        },
+        {
+          "id": "a4177389-7210-4069-a966-2f3addaf99dc",
+          "task": "money-multifile-v1:codex:d1b23c97",
+          "variant": "memory",
+          "client": "codex",
+          "model": "gpt-6-astra",
+          "quality": 1,
+          "elapsed_ms": 20960.26,
+          "input_tokens": 17256,
+          "output_tokens": 491,
+          "cache_read_tokens": 48896,
+          "cache_creation_tokens": 0,
+          "tool_calls": 4,
+          "failures": 0,
+          "cost_usd": null,
+          "finish_reason": "success",
+          "cli_exit_code": 0,
+          "grader": "----------------------------------------------------------------------\nRan 3 tests in 0.000s\n\nOK",
+          "solution": {
+            "money.py": "from decimal import Decimal, ROUND_HALF_UP\n\n\ndef cents(value):\n    return int((Decimal(str(value)) * 100).quantize(Decimal(\"1\"), rounding=ROUND_HALF_UP))\n",
+            "cart.py": "from money import cents\n\n\ndef total(items):\n    return sum(cents(item[\"price\"]) * item[\"quantity\"] for item in items)\n",
+            "invoice.py": "from cart import total\ndef invoice(items):\n    return {\"currency\": \"BRL\", \"total_cents\": total(items)}\n"
+          },
+          "efficiency": {
+            "reads": {
+              "full": 0,
+              "delta": 0,
+              "unchanged": 0,
+              "emitted_tokens": 0,
+              "avoided_tokens": 0
+            },
+            "selection": {
+              "delivered": 1
+            },
+            "injected_tokens": 81
+          }
+        }
+      ],
+      "comparisons": [
+        {
+          "task": "money-multifile-v1:codex:d1b23c97",
+          "model": "gpt-6-astra",
+          "baseline": {
+            "task": "money-multifile-v1:codex:d1b23c97",
+            "model": "gpt-6-astra",
+            "variant": "baseline",
+            "runs": 1,
+            "quality": 1.0,
+            "elapsed_ms": 18862.73,
+            "tokens": 66431.0,
+            "tool_calls": 4.0,
+            "failures": 0.0,
+            "cost_usd": null
+          },
+          "memory": {
+            "task": "money-multifile-v1:codex:d1b23c97",
+            "model": "gpt-6-astra",
+            "variant": "memory",
+            "runs": 1,
+            "quality": 1.0,
+            "elapsed_ms": 20960.26,
+            "tokens": 66643.0,
+            "tool_calls": 4.0,
+            "failures": 0.0,
+            "cost_usd": null
+          },
+          "token_change_percent": 0.32,
+          "quality_preserved": true,
+          "note": "Observed task samples; not a guarantee of savings or subscription limits"
+        }
+      ],
+      "regression": {
+        "evaluated": true,
+        "passed": true,
+        "max_increase_percent": 25,
+        "failures": []
+      },
+      "limits": "Synthetic tasks with independent graders; identical source, task prompt and tools within each client pair. Separate seed databases. Codex uses explicit context retrieval with user hooks disabled, not automatic hook activation. Codex cached input is subtracted from input before aggregation. Codex has a 180-second timeout, no USD cap or inferred cost; --budget caps Claude only. Results from different clients are not paired. Small samples do not establish general savings; no personal project data is sent."
+    }
+  ]
+}

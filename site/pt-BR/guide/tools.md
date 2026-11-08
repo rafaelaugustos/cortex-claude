@@ -1,14 +1,17 @@
 ---
 title: Ferramentas MCP
-description: As dez ferramentas MCP que o Cortex dá ao Claude Code - save, recall, facts, traverse, code, index_code, clusters, forget, scopes e status - com os argumentos.
+description: As quatorze ferramentas MCP que o Cortex dá ao Claude Code - save, recall, facts, traverse, code, index_code, clusters, forget, scopes e status - com os argumentos.
 ---
 
 # Ferramentas MCP
 
-O Claude Code enxerga dez ferramentas. Você não chama elas; você pede ao Claude, e ele escolhe a ferramenta. Conhecer ajuda a pedir bem.
+O Claude Code enxerga quatorze ferramentas. Você não chama elas; você pede ao Claude, e ele escolhe a ferramenta. Conhecer ajuda a pedir bem.
 
 | Ferramenta | Faz |
 | --- | --- |
+| `cortex_learn` | Registra, corrige, inspeciona ou esquece aprendizados compartilhados |
+| `cortex_read` | Lê arquivos com limite de tokens e diferenças verificadas por sessão |
+| `cortex_task` | Salva, retoma e conclui pontos de continuidade de tarefas |
 | `cortex_save` | Salva uma memória, com fatos, resumo e embedding |
 | `cortex_recall` | Recall progressivo: fatos, depois resumos, depois texto inteiro |
 | `cortex_facts` | Busca fatos sobre um assunto no grafo de conhecimento |
@@ -21,6 +24,24 @@ O Claude Code enxerga dez ferramentas. Você não chama elas; você pede ao Clau
 | `cortex_status` | Contagem de memórias e fatos e o espaço por escopo |
 
 ## Argumentos
+
+### cortex_learn
+
+`content` é a conclusão (até 80 tokens); `topic` é uma chave estável. `applicability` aceita `personal`, `transferable` ou `context` (padrão). `triggers` contém termos de recuperação. `explicit` vale somente para instruções permanentes do usuário.
+
+Ações: `observe`, `correct`, `experience`, `outcome`, `feedback`, `read`, `forget`, `list`, `status`. Correção, resultado, leitura de detalhes e exclusão usam `lesson_id`. `conditions` aceita listas `all`/`any`/`none`. `dependencies` lista arquivos relativos; `max_age_days` define validade.
+
+Em `experience`, informe `{situation,cause,solution}` e opcionalmente `verification_id`; `status` lista comprovantes. Use `latest` somente quando o último teste aprovado verificar a solução. `outcome` aceita `passed` (com comprovante) ou `failed`. `read` recebe a `query` atual e `max_tokens`; os detalhes compartilham o limite da sessão. Um `session_id` explícito evita ambiguidade entre sessões concorrentes. Recuperar não confirma uma memória. Veja [Aprendizado](./capture).
+
+### cortex_read
+
+Informe `path` dentro do repositório, `start_line`/`end_line` opcionais, `max_tokens` (80–4.000; padrão 800), `mode` (`auto` ou `full`) e `session_id` opcional. A resposta inclui hash, intervalo entregue e `more`. Auto só retorna diferenças ou “sem mudanças” depois de a mesma sessão receber a base. Sessões ambíguas recebem o conteúdo completo; compactação limpa a base. Use o Read nativo diretamente antes de um Edit que exija esse comprovante, evitando duas leituras do mesmo arquivo.
+
+### cortex_task
+
+Ações: `save`, `list`, `resume`, `complete`, `forget`. Para salvar, informe `title`, `summary`, `next_step`; opcionalmente `decisions`, `pending`, `dependencies`. O conjunto deve caber em 240 tokens. Atualização, conclusão e exclusão exigem `task_id` e `expected_revision`. Os pontos ficam no banco compartilhado, vinculados ao repositório, vencem em 14 dias e indicam `needs_review` se os arquivos mudarem. Salve em momentos úteis de continuidade, sem fazer isso após cada ferramenta.
+
+O feedback usa `cortex_learn action="feedback"`, `lesson_id`, `assessment="useful"|"irrelevant"|"corrected"` e a `query` atual. O assistente só avalia um aprendizado entregue à sua sessão. Isso ajusta a utilidade sem aumentar as confirmações. Preferências conflitantes podem ser revisadas no dashboard.
 
 ### cortex_save
 
@@ -66,3 +87,7 @@ Apaga por `query` ou por `memory_id`. **O `dry_run` vem ligado**: ele mostra o q
 ### cortex_status
 
 Opcionalmente para um `scope`.
+
+## cortex_project
+
+Project knowledge in the shared store. `refresh` reads bounded manifests and documentation headings without running commands. `read` returns modules, declared development commands and sourced conclusions (default 800 tokens, maximum 2,000). `note` records an assistant conclusion after reading 1–5 supporting files; sections are `purpose`, `architecture`, `conventions` and `decisions`. `forget_note` removes an obsolete conclusion. Source changes require review before automatic reuse. Raw execution logs are not project knowledge.

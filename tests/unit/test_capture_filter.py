@@ -32,10 +32,10 @@ class TestCaptureFilter:
         )
         assert d == CaptureDecision.DROP
 
-    def test_keeps_file_read_with_signal_keyword(self, filter_default: CaptureFilter):
+    def test_read_transcript_is_not_promoted_by_signal_keywords(self, filter_default: CaptureFilter):
         content = "Read file: /tmp/x\nPreview: " + "fix the bug because root cause was X" * 3
         d, _ = filter_default.decide(_ctx(content, ["auto-capture", "file-read"]))
-        assert d == CaptureDecision.KEEP
+        assert d == CaptureDecision.DROP
 
     def test_keeps_agent_always(self, filter_default: CaptureFilter):
         d, reason = filter_default.decide(
@@ -55,19 +55,19 @@ class TestCaptureFilter:
         )
         assert d == CaptureDecision.DROP
 
-    def test_keeps_edit_with_signal(self, filter_default: CaptureFilter):
+    def test_edit_transcript_is_not_promoted_by_signal_keywords(self, filter_default: CaptureFilter):
         d, _ = filter_default.decide(
             _ctx(
                 'Edited /x: replaced "foo" with "bar to fix the bug because regression"',
                 ["auto-capture", "file-change"],
             )
         )
-        assert d == CaptureDecision.KEEP
+        assert d == CaptureDecision.DROP
 
     def test_summary_for_ambiguous(self, filter_default: CaptureFilter):
         content = "Command: docker ps\nResult: " + "CONTAINER ID  IMAGE  STATUS " * 8
         d, _ = filter_default.decide(_ctx(content, ["auto-capture", "bash"]))
-        assert d == CaptureDecision.KEEP_SUMMARY
+        assert d == CaptureDecision.DROP
 
     def test_disabled_passes_everything(self):
         f = CaptureFilter(CaptureFilterConfig(enabled=False))

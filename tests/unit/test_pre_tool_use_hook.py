@@ -41,7 +41,7 @@ class TestPreToolUseHook:
         updated = data["hookSpecificOutput"]["updatedInput"]
         assert updated["command"] == "git status --short --branch"
         assert updated["timeout"] == 120000  # other fields preserved
-        assert data["hookSpecificOutput"]["permissionDecision"] == "allow"
+        assert "permissionDecision" not in data["hookSpecificOutput"]
 
     def test_rewrites_git_log(self, hook_script: Path):
         out = run_hook(hook_script, {

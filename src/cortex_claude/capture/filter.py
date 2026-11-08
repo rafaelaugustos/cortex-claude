@@ -99,6 +99,11 @@ class CaptureFilter:
 
     def decide(self, ctx: CaptureContext) -> tuple[CaptureDecision, str]:
         """Returns (decision, reason). Reason is for logging/debugging."""
+        from cortex_claude.capture.quality import execution_dump
+        # Shell output containing 'error' or 'fix' is still a transcript, not
+        # an explanation. Documented commands saved deliberately remain valid.
+        if execution_dump(ctx.content, ctx.tags):
+            return CaptureDecision.DROP, "execution-transcript"
         if not self.config.enabled:
             return CaptureDecision.KEEP, "filter-disabled"
 
