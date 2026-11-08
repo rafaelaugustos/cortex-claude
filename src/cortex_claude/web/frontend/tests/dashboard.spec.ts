@@ -162,10 +162,20 @@ test('health creates, verifies and restores an actual backup without changing li
 })
 
 test('memory proof and diagnostics remain separate from real client activation', async ({ page, request }) => {
+  // The probe starts six hook processes and two MCP servers before checking a backup.
+  test.setTimeout(210000)
   const before = await (await request.get('/api/health')).json()
   await page.goto('/#health')
+  const completed = page.waitForResponse(response =>
+    response.url().endsWith('/api/recovery/self-test') && response.request().method() === 'POST',
+  { timeout: 180000 })
   await page.getByRole('button', { name: 'Testar memória entre sessões', exact: true }).click()
-  await expect(page.getByText('Teste local aprovado', { exact: true })).toBeVisible({ timeout: 20000 })
+  const response = await completed
+  expect(response.ok()).toBe(true)
+  const result = await response.json()
+  expect(result, JSON.stringify(result)).toMatchObject({ status: 'passed', client_activation_tested: false })
+  expect(result.checks).toHaveLength(8)
+  await expect(page.getByText('Teste local aprovado', { exact: true })).toBeVisible()
   await expect(page.getByText(/8 etapas aprovadas/)).toBeVisible()
   const after = await (await request.get('/api/health')).json()
   expect(after.self_test.status).toBe('passed')
