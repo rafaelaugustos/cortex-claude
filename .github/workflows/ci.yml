@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_call:
   push:
     branches: [main]
   pull_request:
@@ -10,6 +11,28 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  dashboard:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/cortex_claude/web/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: src/cortex_claude/web/frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --locked --all-extras --python 3.12
+        working-directory: .
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser
+
   test:
     runs-on: ${{ matrix.os }}
     strategy:
@@ -27,10 +50,35 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --all-extras --python ${{ matrix.python-version }}
+        run: uv sync --locked --all-extras --python ${{ matrix.python-version }}
 
       - name: Download spaCy model
         run: uv run python -m spacy download en_core_web_sm
 
       - name: Run tests
         run: uv run pytest tests/ -v --tb=short
+
+  package:
+    needs: [test, dashboard]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --locked --all-extras --python 3.12
+      - run: npm ci
+        working-directory: src/cortex_claude/web/frontend
+      - name: Verify reproducible wheel and bundled dashboard
+        run: uv run python scripts/release.py build --output dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified-wheel
+          path: dist/*.whl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-verification
+          path: |
+            dist/SHA256SUMS
+            dist/build-report.json

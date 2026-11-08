@@ -1,0 +1,1776 @@
+{
+  "version": "0.11.0",
+  "evaluated_at": "2026-11-07",
+  "method": "Five synthetic coding tasks including multifile money precision, shared-helper refactoring and a handoff. Independent fixed graders; same prompt, tools and source files per arm. Each arm gets a separate seed database. Handoff requirements are also in HANDOFF.md for both arms. Live metrics come from Claude CLI and include input/output/cache; local read-avoidance estimates are separate. Small samples and cache order affect results; this does not establish general savings. Semantic matching is evaluated separately; task retrieval uses lexical cues.",
+  "changes_since_initial": "Changed both arms' system instructions to use native Read directly before Edit when an editor receipt is required; cortex_read remains available for bounded/repeated inspection without duplicate editor reads. Harness fingerprint changed from v3 to v4. The initial result is preserved below; small samples do not establish causality or general savings.",
+  "task_runs": [
+    {
+      "id": "35259898-cafd-412e-bace-acb530ca6410",
+      "task": "environment-flags-v1:acda0330",
+      "variant": "baseline",
+      "model": "claude-haiku-5-5",
+      "quality": 1,
+      "elapsed_ms": 18937.61,
+      "input_tokens": 12,
+      "output_tokens": 1447,
+      "cache_read_tokens": 61930,
+      "cache_creation_tokens": 3187,
+      "tool_calls": 6,
+      "failures": 0,
+      "cost_usd": 0.0019814,
+      "finish_reason": "success",
+      "cli_exit_code": 0,
+      "grader": "----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK",
+      "solution": {
+        "subject.py": "_ENABLED_VALUES = frozenset({\"1\", \"true\", \"yes\", \"on\"})\n\n\ndef enabled(value):\n    if not isinstance(value, str):\n        return False\n    return value.strip().lower() in _ENABLED_VALUES\n"
+      },
+      "efficiency": {
+        "reads": {
+          "full": 0,
+          "delta": 0,
+          "unchanged": 0,
+          "emitted_tokens": 0,
+          "avoided_tokens": 0
+        },
+        "selection": {},
+        "injected_tokens": 0
+      }
+    },
+    {
+      "id": "476ed2f7-912e-4e00-b624-86d24c90cc06",
+      "task": "environment-flags-v1:acda0330",
+      "variant": "memory",
+      "model": "claude-haiku-5-5",
+      "quality": 1,
+      "elapsed_ms": 13796.33,
+      "input_tokens": 8,
+      "output_tokens": 741,
+      "cache_read_tokens": 39985,
+      "cache_creation_tokens": 1315,
+      "tool_calls": 3,
+      "failures": 0,
+      "cost_usd": 0.00103415,
+      "finish_reason": "success",
+      "cli_exit_code": 0,
+      "grader": "----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK",
+      "solution": {
+        "subject.py": "_TRUE_VALUES = frozenset({\"1\", \"true\", \"yes\", \"on\"})\n\n\ndef enabled(value):\n    return str(value).strip().casefold() in _TRUE_VALUES\n"
+      },
+      "efficiency": {
+        "reads": {
+          "full": 0,
+          "delta": 0,
+          "unchanged": 0,
+          "emitted_tokens": 0,
+          "avoided_tokens": 0
+        },
+        "selection": {
+          "delivered": 1
+        },
+        "injected_tokens": 77
+      }
+    },
+    {
+      "id": "ca4c5132-0c3c-48e4-b4ce-e55b335dc6d4",
+      "task": "environment-flags-v1:acda0330",
+      "variant": "memory",
+      "model": "claude-haiku-5-5",
+      "quality": 1,
+      "elapsed_ms": 20099.91,
+      "input_tokens": 14,
+      "output_tokens": 956,
+      "cache_read_tokens": 72024,
+      "cache_creation_tokens": 2017,
+      "tool_calls": 6,
+      "failures": 0,
+      "cost_usd": 0.00160304,
+      "finish_reason": "success",
+      "cli_exit_code": 0,
+      "grader": "----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK",
+      "solution": {
+        "subject.py": "_TRUE_VALUES = frozenset({\"1\", \"true\", \"yes\", \"on\"})\n\n\ndef enabled(value):\n    if value is None:\n        return False\n    return str(value).strip().casefold() in _TRUE_VALUES\n"
+      },
+      "efficiency": {
+        "reads": {
+          "full": 0,
+          "delta": 0,
+          "unchanged": 0,
+          "emitted_tokens": 0,
+          "avoided_tokens": 0
+        },
+        "selection": {
+          "delivered": 1
+        },
+        "injected_tokens": 77
+      }
+    },
+    {
+      "id": "00251edf-2888-4158-9b48-084aef41260e",
+      "task": "environment-flags-v1:acda0330",
+      "variant": "baseline",
+      "model": "claude-haiku-5-5",
+      "quality": 1,
+      "elapsed_ms": 14647.18,
+      "input_tokens": 8,
+      "output_tokens": 1208,
+      "cache_read_tokens": 39960,
+      "cache_creation_tokens": 1998,
+      "tool_calls": 5,
+      "failures": 0,
+      "cost_usd": 0.0014040000000000003,
+      "finish_reason": "success",
+      "cli_exit_code": 0,
+      "grader": "----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK",
+      "solution": {
+        "subject.py": "_TRUE_VALUES = frozenset({\"1\", \"true\", \"yes\", \"on\"})\n\n\ndef enabled(value):\n    if value is None:\n        return False\n    return str(value).strip().lower() in _TRUE_VALUES\n"
+      },
+      "efficiency": {
+        "reads": {
+          "full": 0,
+          "delta": 0,
+          "unchanged": 0,
+          "emitted_tokens": 0,
+          "avoided_tokens": 0
+        },
+        "selection": {},
+        "injected_tokens": 0
+      }
+    },
+    {
+      "id": "26d22f72-7667-491b-9dca-2069a2662f46",
+      "task": "expiry-units-v1:e01e90df",
+      "variant": "baseline",
+      "model": "claude-haiku-5-5",
+      "quality": 1,
+      "elapsed_ms": 13560.46,
+      "input_tokens": 8,
+      "output_tokens": 977,
+      "cache_read_tokens": 39453,
+      "cache_creation_tokens": 2492,
+      "tool_calls": 5,
+      "failures": 0,
+      "cost_usd": 0.0013822300000000001,
+      "finish_reason": "success",
+      "cli_exit_code": 0,
+      "grader": "----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK",
+      "solution": {
+        "subject.py": "def expired(record, now_seconds):\n    expires_at = record[\"expires_at\"]\n    if record.get(\"unit\", \"seconds\") == \"milliseconds\":\n        expires_at = expires_at / 1000\n    return now_seconds >= expires_at\n"
+      },
+      "efficiency": {
+        "reads": {
+          "full": 0,
+          "delta": 0,
+          "unchanged": 0,
+          "emitted_tokens": 0,
+          "avoided_tokens": 0
+        },
+        "selection": {},
+        "injected_tokens": 0
+      }
+    },
+    {
+      "id": "3ca06491-8bbb-4095-b38c-abbebe776d2f",
+      "task": "expiry-units-v1:e01e90df",
+      "variant": "memory",
+      "model": "claude-haiku-5-5",
+      "quality": 1,
+      "elapsed_ms": 13327.21,
+      "input_tokens": 8,
+      "output_tokens": 883,
+      "cache_read_tokens": 40443,
+      "cache_creation_tokens": 1953,
+      "tool_calls": 5,
+      "failures": 0,
+      "cost_usd": 0.00123733,
+      "finish_reason": "success",
+      "cli_exit_code": 0,
+      "grader": "----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK",
+      "solution": {
+        "subject.py": "def expired(record, now_seconds):\n    expires_at = record[\"expires_at\"]\n    if record.get(\"unit\", \"seconds\") == \"milliseconds\":\n        expires_at = expires_at / 1000\n    return now_seconds >= expires_at\n"
+      },
+      "efficiency": {
+        "reads": {
+          "full": 0,
+          "delta": 0,
+          "unchanged": 0,
+          "emitted_tokens": 0,
+          "avoided_tokens": 0
+        },
+        "selection": {
+          "delivered": 1
+        },
+        "injected_tokens": 73
+      }
+    },
+    {
+      "id": "643dcdd2-3164-42bc-b7f0-430a5380ea69",
+      "task": "expiry-units-v1:e01e90df",
+      "variant": "memory",
+      "model": "claude-haiku-5-5",
+      "quality": 1,
+      "elapsed_ms": 11983.72,
+      "input_tokens": 6,
+      "output_tokens": 817,
+      "cache_read_tokens": 29869,
+      "cache_creation_tokens": 1788,
+      "tool_calls": 4,
+      "failures": 1,
+      "cost_usd": 0.00106539,
+      "finish_reason": "success",
+      "cli_exit_code": 0,
+      "grader": "----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK",
+      "solution": {
+        "subject.py": "def expired(record, now_seconds):\n    expires_at = record[\"expires_at\"]\n    if record.get(\"unit\") == \"milliseconds\":\n        expires_at = expires_at / 1000\n    return now_seconds >= expires_at\n"
+      },
+      "efficiency": {
+        "reads": {
+          "full": 0,
+          "delta": 0,
+          "unchanged": 0,
+          "emitted_tokens": 0,
+          "avoided_tokens": 0
+        },
+        "selection": {
+          "delivered": 1
+        },
+        "injected_tokens": 73
+      }
+    },
+    {
+      "id": "6b39cc15-c87e-47e1-a998-69b1ad8c1ba2",
+      "task": "expiry-units-v1:e01e90df",
+      "variant": "baseline",
+      "model": "claude-haiku-5-5",
+      "quality": 1,
+      "elapsed_ms": 16139.75,
+      "input_tokens": 10,
+      "output_tokens": 1067,
+      "cache_read_tokens": 51152,
+      "cache_creation_tokens": 1890,
+      "tool_calls": 5,
+      "failures": 0,
+      "cost_usd": 0.00142402,
+      "finish_reason": "success",
+      "cli_exit_code": 0,
+      "grader": "----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK",
+      "solution": {
+        "subject.py": "def expired(record, now_seconds):\n    expires_at = record[\"expires_at\"]\n    if record.get(\"unit\", \"seconds\") == \"milliseconds\":\n        expires_at = expires_at / 1000\n    return now_seconds >= expires_at\n"
+      },
+      "efficiency": {
+        "reads": {
+          "full": 0,
+          "delta": 0,
+          "unchanged": 0,
+          "emitted_tokens": 0,
+          "avoided_tokens": 0
+        },
+        "selection": {},
+        "injected_tokens": 0
+      }
+    },
+    {
+      "id": "fc6266d2-96ba-4b41-b826-8dceadf213e2",
+      "task": "money-multifile-v1:c95b7390",
+      "variant": "baseline",
+      "model": "claude-haiku-5-5",
+      "quality": 1,
+      "elapsed_ms": 17518.21,
+      "input_tokens": 10,
+      "output_tokens": 2174,
+      "cache_read_tokens": 53625,
+      "cache_creation_tokens": 4230,
+      "tool_calls": 8,
+      "failures": 1,
+      "cost_usd": 0.0024702500000000002,
+      "finish_reason": "success",
+      "cli_exit_code": 0,
+      "grader": "----------------------------------------------------------------------\nRan 3 tests in 0.000s\n\nOK",
+      "solution": {
+        "money.py": "from decimal import Decimal, ROUND_HALF_UP\n\n\ndef cents(value):\n    \"\"\"Convert a decimal amount (str, int, float or Decimal) to integer cents.\n\n    Uses the string form of the value to avoid binary float error, and rounds\n    half away from zero (so -1.005 -> -101).\n    \"\"\"\n    amount = Decimal(str(value)) * 100\n    return int(amount.quantize(Decimal(\"1\"), rounding=ROUND_HALF_UP))\n",
+        "cart.py": "from money import cents\ndef total(items):\n    return sum(cents(item[\"price\"]) * item[\"quantity\"] for item in items)\n",
+        "invoice.py": "from cart import total\ndef invoice(items):\n    return {\"currency\": \"BRL\", \"total_cents\": total(items)}\n"
+      },
+      "efficiency": {
+        "reads": {
+          "full": 0,
+          "delta": 0,
+          "unchanged": 0,
+          "emitted_tokens": 0,
+          "avoided_tokens": 0
+        },
+        "selection": {},
+        "injected_tokens": 0
+      }
+    },
+    {
+      "id": "c7bb5a26-fbde-4b4e-b8fb-2005140566c1",
+      "task": "money-multifile-v1:c95b7390",
+      "variant": "memory",
+      "model": "claude-haiku-5-5",
+      "quality": 1,
+      "elapsed_ms": 17856.23,
+      "input_tokens": 10,
+      "output_tokens": 1975,
+      "cache_read_tokens": 53220,
+      "cache_creation_tokens": 3330,
+      "tool_calls": 8,
+      "failures": 0,
+      "cost_usd": 0.0021867,
+      "finish_reason": "success",
+      "cli_exit_code": 0,
+      "grader": "----------------------------------------------------------------------\nRan 3 tests in 0.000s\n\nOK",
+      "solution": {
+        "money.py": "from decimal import Decimal, ROUND_HALF_UP\n\n\ndef cents(value):\n    amount = Decimal(str(value)) * 100\n    return int(amount.quantize(Decimal(\"1\"), rounding=ROUND_HALF_UP))\n",
+        "cart.py": "from money import cents\ndef total(items):\n    return sum(cents(item[\"price\"]) * item[\"quantity\"] for item in items)\n",
+        "invoice.py": "from cart import total\ndef invoice(items):\n    return {\"currency\": \"BRL\", \"total_cents\": total(items)}\n"
+      },
+      "efficiency": {
+        "reads": {
+          "full": 0,
+          "delta": 0,
+          "unchanged": 0,
+          "emitted_tokens": 0,
+          "avoided_tokens": 0
+        },
+        "selection": {
+          "delivered": 1
+        },
+        "injected_tokens": 81
+      }
+    },
+    {
+      "id": "75417b76-7698-4aca-bd6f-bd3c5ed7dadb",
+      "task": "money-multifile-v1:c95b7390",
+      "variant": "memory",
+      "model": "claude-haiku-5-5",
+      "quality": 1,
+      "elapsed_ms": 16538.22,
+      "input_tokens": 10,
+      "output_tokens": 1700,
+      "cache_read_tokens": 53210,
+      "cache_creation_tokens": 3110,
+      "tool_calls": 5,
+      "failures": 0,
+      "cost_usd": 0.0020051,
+      "finish_reason": "success",
+      "cli_exit_code": 0,
+      "grader": "----------------------------------------------------------------------\nRan 3 tests in 0.000s\n\nOK",
+      "solution": {
+        "money.py": "from decimal import Decimal, ROUND_HALF_UP\n\n\ndef cents(value):\n    return int((Decimal(str(value)) * 100).quantize(Decimal(\"1\"), rounding=ROUND_HALF_UP))\n",
+        "cart.py": "from money import cents\ndef total(items):\n    return sum(cents(item[\"price\"]) * item[\"quantity\"] for item in items)\n",
+        "invoice.py": "from cart import total\ndef invoice(items):\n    return {\"currency\": \"BRL\", \"total_cents\": total(items)}\n"
+      },
+      "efficiency": {
+        "reads": {
+          "full": 0,
+          "delta": 0,
+          "unchanged": 0,
+          "emitted_tokens": 0,
+          "avoided_tokens": 0
+        },
+        "selection": {
+          "delivered": 1
+        },
+        "injected_tokens": 81
+      }
+    },
+    {
+      "id": "9c11dc4c-49d4-424c-865c-a8f862119bb0",
+      "task": "money-multifile-v1:c95b7390",
+      "variant": "baseline",
+      "model": "claude-haiku-5-5",
+      "quality": 1,
+      "elapsed_ms": 16845.6,
+      "input_tokens": 10,
+      "output_tokens": 2213,
+      "cache_read_tokens": 54196,
+      "cache_creation_tokens": 3635,
+      "tool_calls": 8,
+      "failures": 0,
+      "cost_usd": 0.00237646,
+      "finish_reason": "success",
+      "cli_exit_code": 0,
+      "grader": "----------------------------------------------------------------------\nRan 3 tests in 0.000s\n\nOK",
+      "solution": {
+        "money.py": "from decimal import Decimal, ROUND_HALF_UP\n\n\ndef cents(value):\n    amount = Decimal(str(value)) * 100\n    return int(amount.quantize(Decimal(1), rounding=ROUND_HALF_UP))\n",
+        "cart.py": "from money import cents\ndef total(items):\n    return sum(cents(item[\"price\"]) * item[\"quantity\"] for item in items)\n",
+        "invoice.py": "from cart import total\ndef invoice(items):\n    return {\"currency\": \"BRL\", \"total_cents\": total(items)}\n"
+      },
+      "efficiency": {
+        "reads": {
+          "full": 0,
+          "delta": 0,
+          "unchanged": 0,
+          "emitted_tokens": 0,
+          "avoided_tokens": 0
+        },
+        "selection": {},
+        "injected_tokens": 0
+      }
+    },
+    {
+      "id": "698582dd-fa28-45b3-b503-d67b228e2ea1",
+      "task": "parser-refactor-v1:87901344",
+      "variant": "baseline",
+      "model": "claude-haiku-5-5",
+      "quality": 1,
+      "elapsed_ms": 18564.84,
+      "input_tokens": 10,
+      "output_tokens": 2332,
+      "cache_read_tokens": 53459,
+      "cache_creation_tokens": 4361,
+      "tool_calls": 9,
+      "failures": 0,
+      "cost_usd": 0.00257379,
+      "finish_reason": "success",
+      "cli_exit_code": 0,
+      "grader": "----------------------------------------------------------------------\nRan 3 tests in 0.000s\n\nOK",
+      "solution": {
+        "flags.py": "_TRUE_VALUES = frozenset({\"1\", \"true\", \"yes\", \"on\"})\n\n\ndef parse_flag(value):\n    if not isinstance(value, str):\n        return False\n    return value.strip().lower() in _TRUE_VALUES\n",
+        "api.py": "from flags import parse_flag\n\n\ndef api_enabled(config):\n    return parse_flag(config.get(\"enabled\"))\n",
+        "worker.py": "from flags import parse_flag\n\n\ndef worker_enabled(config):\n    return parse_flag(config.get(\"enabled\"))\n"
+      },
+      "efficiency": {
+        "reads": {
+          "full": 0,
+          "delta": 0,
+          "unchanged": 0,
+          "emitted_tokens": 0,
+          "avoided_tokens": 0
+        },
+        "selection": {},
+        "injected_tokens": 0
+      }
+    },
+    {
+      "id": "105d3ea9-6927-46a5-a63a-c1dafac41774",
+      "task": "parser-refactor-v1:87901344",
+      "variant": "memory",
+      "model": "claude-haiku-5-5",
+      "quality": 1,
+      "elapsed_ms": 18836.7,
+      "input_tokens": 8,
+      "output_tokens": 2568,
+      "cache_read_tokens": 41131,
+      "cache_creation_tokens": 4042,
+      "tool_calls": 9,
+      "failures": 0,
+      "cost_usd": 0.0025045099999999997,
+      "finish_reason": "success",
+      "cli_exit_code": 0,
+      "grader": "----------------------------------------------------------------------\nRan 3 tests in 0.000s\n\nOK",
+      "solution": {
+        "flags.py": "TRUE_VALUES = frozenset({\"1\", \"true\", \"yes\", \"on\"})\n\n\ndef parse_flag(value):\n    if value is None:\n        return False\n    return str(value).strip().casefold() in TRUE_VALUES\n",
+        "api.py": "from flags import parse_flag\n\n\ndef api_enabled(config):\n    return parse_flag(config.get(\"enabled\"))\n",
+        "worker.py": "from flags import parse_flag\n\n\ndef worker_enabled(config):\n    return parse_flag(config.get(\"enabled\"))\n"
+      },
+      "efficiency": {
+        "reads": {
+          "full": 0,
+          "delta": 0,
+          "unchanged": 0,
+          "emitted_tokens": 0,
+          "avoided_tokens": 0
+        },
+        "selection": {
+          "delivered": 1
+        },
+        "injected_tokens": 81
+      }
+    },
+    {
+      "id": "973cf440-e2dc-4aa3-9567-87da4a90455e",
+      "task": "parser-refactor-v1:87901344",
+      "variant": "memory",
+      "model": "claude-haiku-5-5",
+      "quality": 1,
+      "elapsed_ms": 18250.31,
+      "input_tokens": 10,
+      "output_tokens": 2197,
+      "cache_read_tokens": 54514,
+      "cache_creation_tokens": 3727,
+      "tool_calls": 9,
+      "failures": 0,
+      "cost_usd": 0.0023900400000000004,
+      "finish_reason": "success",
+      "cli_exit_code": 0,
+      "grader": "----------------------------------------------------------------------\nRan 3 tests in 0.000s\n\nOK",
+      "solution": {
+        "flags.py": "_TRUE_VALUES = frozenset({\"1\", \"true\", \"yes\", \"on\"})\n\n\ndef parse_flag(value):\n    \"\"\"Return True only for 1/true/yes/on (case-insensitive, whitespace-stripped).\"\"\"\n    return str(value).strip().casefold() in _TRUE_VALUES\n",
+        "api.py": "from flags import parse_flag\n\n\ndef api_enabled(config):\n    return parse_flag(config.get(\"enabled\"))\n",
+        "worker.py": "from flags import parse_flag\n\n\ndef worker_enabled(config):\n    return parse_flag(config.get(\"enabled\"))\n"
+      },
+      "efficiency": {
+        "reads": {
+          "full": 0,
+          "delta": 0,
+          "unchanged": 0,
+          "emitted_tokens": 0,
+          "avoided_tokens": 0
+        },
+        "selection": {
+          "delivered": 1
+        },
+        "injected_tokens": 81
+      }
+    },
+    {
+      "id": "52f52ac9-db03-4c0c-a038-fddd960522ed",
+      "task": "parser-refactor-v1:87901344",
+      "variant": "baseline",
+      "model": "claude-haiku-5-5",
+      "quality": 1,
+      "elapsed_ms": 18018.56,
+      "input_tokens": 8,
+      "output_tokens": 2326,
+      "cache_read_tokens": 41115,
+      "cache_creation_tokens": 3958,
+      "tool_calls": 9,
+      "failures": 0,
+      "cost_usd": 0.0023665500000000003,
+      "finish_reason": "success",
+      "cli_exit_code": 0,
+      "grader": "----------------------------------------------------------------------\nRan 3 tests in 0.000s\n\nOK",
+      "solution": {
+        "flags.py": "TRUTHY_VALUES = frozenset({\"1\", \"true\", \"yes\", \"on\"})\n\n\ndef parse_flag(value):\n    if not isinstance(value, str):\n        return False\n    return value.strip().lower() in TRUTHY_VALUES\n",
+        "api.py": "from flags import parse_flag\n\n\ndef api_enabled(config):\n    return parse_flag(config.get(\"enabled\"))\n",
+        "worker.py": "from flags import parse_flag\n\n\ndef worker_enabled(config):\n    return parse_flag(config.get(\"enabled\"))\n"
+      },
+      "efficiency": {
+        "reads": {
+          "full": 0,
+          "delta": 0,
+          "unchanged": 0,
+          "emitted_tokens": 0,
+          "avoided_tokens": 0
+        },
+        "selection": {},
+        "injected_tokens": 0
+      }
+    },
+    {
+      "id": "56e81109-de15-411b-bd1d-90604138da1a",
+      "task": "resume-expiry-v1:84ec7fa1",
+      "variant": "baseline",
+      "model": "claude-haiku-5-5",
+      "quality": 1,
+      "elapsed_ms": 21162.69,
+      "input_tokens": 10,
+      "output_tokens": 1868,
+      "cache_read_tokens": 53204,
+      "cache_creation_tokens": 3983,
+      "tool_calls": 9,
+      "failures": 0,
+      "cost_usd": 0.00226364,
+      "finish_reason": "success",
+      "cli_exit_code": 0,
+      "grader": "----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK",
+      "solution": {
+        "clock_units.py": "def seconds(record):\n    value = record[\"expires_at\"]\n    return value / 1000 if record.get(\"unit\", \"seconds\") == \"milliseconds\" else value\n",
+        "cache.py": "from clock_units import seconds\n\n\ndef active(records, now):\n    return [r for r in records if now < seconds(r)]\n",
+        "cleanup.py": "from clock_units import seconds\n\n\ndef expired_ids(records, now):\n    return [r[\"id\"] for r in records if now >= seconds(r)]\n"
+      },
+      "efficiency": {
+        "reads": {
+          "full": 0,
+          "delta": 0,
+          "unchanged": 0,
+          "emitted_tokens": 0,
+          "avoided_tokens": 0
+        },
+        "selection": {},
+        "injected_tokens": 0
+      }
+    },
+    {
+      "id": "148f26a4-7164-4630-877a-97d4cd9849aa",
+      "task": "resume-expiry-v1:84ec7fa1",
+      "variant": "memory",
+      "model": "claude-haiku-5-5",
+      "quality": 1,
+      "elapsed_ms": 16649.09,
+      "input_tokens": 10,
+      "output_tokens": 1687,
+      "cache_read_tokens": 54665,
+      "cache_creation_tokens": 3514,
+      "tool_calls": 9,
+      "failures": 0,
+      "cost_usd": 0.0020939500000000002,
+      "finish_reason": "success",
+      "cli_exit_code": 0,
+      "grader": "----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK",
+      "solution": {
+        "clock_units.py": "def seconds(record):\n    value = record[\"expires_at\"]\n    return value / 1000 if record.get(\"unit\", \"seconds\") == \"milliseconds\" else value\n",
+        "cache.py": "from clock_units import seconds\n\n\ndef active(records, now):\n    return [r for r in records if now < seconds(r)]\n",
+        "cleanup.py": "from clock_units import seconds\n\n\ndef expired_ids(records, now):\n    return [r[\"id\"] for r in records if now >= seconds(r)]\n"
+      },
+      "efficiency": {
+        "reads": {
+          "full": 0,
+          "delta": 0,
+          "unchanged": 0,
+          "emitted_tokens": 0,
+          "avoided_tokens": 0
+        },
+        "selection": {
+          "delivered": 1
+        },
+        "injected_tokens": 165
+      }
+    },
+    {
+      "id": "c4cf36ae-1496-4db0-8542-40f41ad3aa0f",
+      "task": "resume-expiry-v1:84ec7fa1",
+      "variant": "memory",
+      "model": "claude-haiku-5-5",
+      "quality": 1,
+      "elapsed_ms": 16729.16,
+      "input_tokens": 10,
+      "output_tokens": 1906,
+      "cache_read_tokens": 55042,
+      "cache_creation_tokens": 3713,
+      "tool_calls": 9,
+      "failures": 0,
+      "cost_usd": 0.0022470199999999997,
+      "finish_reason": "success",
+      "cli_exit_code": 0,
+      "grader": "----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK",
+      "solution": {
+        "clock_units.py": "def seconds(record):\n    value = record[\"expires_at\"]\n    return value / 1000 if record.get(\"unit\", \"seconds\") == \"milliseconds\" else value\n",
+        "cache.py": "from clock_units import seconds\n\n\ndef active(records, now):\n    return [r for r in records if now < seconds(r)]\n",
+        "cleanup.py": "from clock_units import seconds\n\n\ndef expired_ids(records, now):\n    return [r[\"id\"] for r in records if now >= seconds(r)]\n"
+      },
+      "efficiency": {
+        "reads": {
+          "full": 0,
+          "delta": 0,
+          "unchanged": 0,
+          "emitted_tokens": 0,
+          "avoided_tokens": 0
+        },
+        "selection": {
+          "delivered": 1
+        },
+        "injected_tokens": 167
+      }
+    },
+    {
+      "id": "470b0916-2c53-4969-869d-4ae951c5ba62",
+      "task": "resume-expiry-v1:84ec7fa1",
+      "variant": "baseline",
+      "model": "claude-haiku-5-5",
+      "quality": 1,
+      "elapsed_ms": 24877.7,
+      "input_tokens": 10,
+      "output_tokens": 1706,
+      "cache_read_tokens": 54242,
+      "cache_creation_tokens": 3476,
+      "tool_calls": 9,
+      "failures": 0,
+      "cost_usd": 0.00209162,
+      "finish_reason": "success",
+      "cli_exit_code": 0,
+      "grader": "----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK",
+      "solution": {
+        "clock_units.py": "def seconds(record):\n    value = record[\"expires_at\"]\n    return value / 1000 if record.get(\"unit\", \"seconds\") == \"milliseconds\" else value\n",
+        "cache.py": "from clock_units import seconds\n\n\ndef active(records, now):\n    return [r for r in records if now < seconds(r)]\n",
+        "cleanup.py": "from clock_units import seconds\n\n\ndef expired_ids(records, now):\n    return [r[\"id\"] for r in records if seconds(r) <= now]\n"
+      },
+      "efficiency": {
+        "reads": {
+          "full": 0,
+          "delta": 0,
+          "unchanged": 0,
+          "emitted_tokens": 0,
+          "avoided_tokens": 0
+        },
+        "selection": {},
+        "injected_tokens": 0
+      }
+    }
+  ],
+  "comparisons": [
+    {
+      "task": "environment-flags-v1:acda0330",
+      "model": "claude-haiku-5-5",
+      "baseline": {
+        "task": "environment-flags-v1:acda0330",
+        "model": "claude-haiku-5-5",
+        "variant": "baseline",
+        "runs": 2,
+        "quality": 1,
+        "elapsed_ms": 16792.395,
+        "tokens": 54875,
+        "tool_calls": 5.5,
+        "failures": 0,
+        "cost_usd": 0.0016927
+      },
+      "memory": {
+        "task": "environment-flags-v1:acda0330",
+        "model": "claude-haiku-5-5",
+        "variant": "memory",
+        "runs": 2,
+        "quality": 1,
+        "elapsed_ms": 16948.12,
+        "tokens": 58530,
+        "tool_calls": 4.5,
+        "failures": 0,
+        "cost_usd": 0.001318595
+      },
+      "token_change_percent": 6.66,
+      "quality_preserved": true,
+      "note": "Observed task samples; not a guarantee of savings or subscription limits"
+    },
+    {
+      "task": "expiry-units-v1:e01e90df",
+      "model": "claude-haiku-5-5",
+      "baseline": {
+        "task": "expiry-units-v1:e01e90df",
+        "model": "claude-haiku-5-5",
+        "variant": "baseline",
+        "runs": 2,
+        "quality": 1,
+        "elapsed_ms": 14850.105,
+        "tokens": 48524.5,
+        "tool_calls": 5,
+        "failures": 0,
+        "cost_usd": 0.001403125
+      },
+      "memory": {
+        "task": "expiry-units-v1:e01e90df",
+        "model": "claude-haiku-5-5",
+        "variant": "memory",
+        "runs": 2,
+        "quality": 1,
+        "elapsed_ms": 12655.465,
+        "tokens": 37883.5,
+        "tool_calls": 4.5,
+        "failures": 0.5,
+        "cost_usd": 0.0011513600000000001
+      },
+      "token_change_percent": -21.93,
+      "quality_preserved": true,
+      "note": "Observed task samples; not a guarantee of savings or subscription limits"
+    },
+    {
+      "task": "money-multifile-v1:c95b7390",
+      "model": "claude-haiku-5-5",
+      "baseline": {
+        "task": "money-multifile-v1:c95b7390",
+        "model": "claude-haiku-5-5",
+        "variant": "baseline",
+        "runs": 2,
+        "quality": 1,
+        "elapsed_ms": 17181.905,
+        "tokens": 60046.5,
+        "tool_calls": 8,
+        "failures": 0.5,
+        "cost_usd": 0.0024233550000000003
+      },
+      "memory": {
+        "task": "money-multifile-v1:c95b7390",
+        "model": "claude-haiku-5-5",
+        "variant": "memory",
+        "runs": 2,
+        "quality": 1,
+        "elapsed_ms": 17197.225,
+        "tokens": 58282.5,
+        "tool_calls": 6.5,
+        "failures": 0,
+        "cost_usd": 0.0020959000000000004
+      },
+      "token_change_percent": -2.94,
+      "quality_preserved": true,
+      "note": "Observed task samples; not a guarantee of savings or subscription limits"
+    },
+    {
+      "task": "parser-refactor-v1:87901344",
+      "model": "claude-haiku-5-5",
+      "baseline": {
+        "task": "parser-refactor-v1:87901344",
+        "model": "claude-haiku-5-5",
+        "variant": "baseline",
+        "runs": 2,
+        "quality": 1,
+        "elapsed_ms": 18291.7,
+        "tokens": 53784.5,
+        "tool_calls": 9,
+        "failures": 0,
+        "cost_usd": 0.00247017
+      },
+      "memory": {
+        "task": "parser-refactor-v1:87901344",
+        "model": "claude-haiku-5-5",
+        "variant": "memory",
+        "runs": 2,
+        "quality": 1,
+        "elapsed_ms": 18543.505,
+        "tokens": 54098.5,
+        "tool_calls": 9,
+        "failures": 0,
+        "cost_usd": 0.002447275
+      },
+      "token_change_percent": 0.58,
+      "quality_preserved": true,
+      "note": "Observed task samples; not a guarantee of savings or subscription limits"
+    },
+    {
+      "task": "resume-expiry-v1:84ec7fa1",
+      "model": "claude-haiku-5-5",
+      "baseline": {
+        "task": "resume-expiry-v1:84ec7fa1",
+        "model": "claude-haiku-5-5",
+        "variant": "baseline",
+        "runs": 2,
+        "quality": 1,
+        "elapsed_ms": 23020.195,
+        "tokens": 59249.5,
+        "tool_calls": 9,
+        "failures": 0,
+        "cost_usd": 0.00217763
+      },
+      "memory": {
+        "task": "resume-expiry-v1:84ec7fa1",
+        "model": "claude-haiku-5-5",
+        "variant": "memory",
+        "runs": 2,
+        "quality": 1,
+        "elapsed_ms": 16689.125,
+        "tokens": 60273.5,
+        "tool_calls": 9,
+        "failures": 0,
+        "cost_usd": 0.0021704849999999998
+      },
+      "token_change_percent": 1.73,
+      "quality_preserved": true,
+      "note": "Observed task samples; not a guarantee of savings or subscription limits"
+    }
+  ],
+  "regression": {
+    "evaluated": true,
+    "passed": true,
+    "max_increase_percent": 25,
+    "failures": []
+  },
+  "aggregate": {
+    "baseline": 552960,
+    "memory": 538136,
+    "token_change_percent": -2.68,
+    "quality_passed": 20,
+    "runs": 20
+  },
+  "offline_checks": [
+    {
+      "task": "environment-flags-v1",
+      "bug_detected": true,
+      "past_solution_passed": true,
+      "shared_retrieval_tokens": 77
+    },
+    {
+      "task": "expiry-units-v1",
+      "bug_detected": true,
+      "past_solution_passed": true,
+      "shared_retrieval_tokens": 73
+    },
+    {
+      "task": "money-multifile-v1",
+      "bug_detected": true,
+      "past_solution_passed": true,
+      "shared_retrieval_tokens": 81
+    },
+    {
+      "task": "parser-refactor-v1",
+      "bug_detected": true,
+      "past_solution_passed": true,
+      "shared_retrieval_tokens": 81
+    },
+    {
+      "task": "resume-expiry-v1",
+      "bug_detected": true,
+      "past_solution_passed": true,
+      "shared_retrieval_tokens": 167
+    }
+  ],
+  "initial_attempt": {
+    "task_runs": [
+      {
+        "id": "3cbcafdb-c0b7-4058-941a-736213e0d373",
+        "task": "environment-flags-v1:136d7424",
+        "variant": "baseline",
+        "model": "claude-haiku-5-5",
+        "quality": 1,
+        "elapsed_ms": 16539.59,
+        "input_tokens": 10,
+        "output_tokens": 881,
+        "cache_read_tokens": 41380,
+        "cache_creation_tokens": 11219,
+        "tool_calls": 5,
+        "failures": 0,
+        "cost_usd": 0.0030991000000000005,
+        "finish_reason": "success",
+        "cli_exit_code": 0,
+        "grader": "----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK",
+        "solution": {
+          "subject.py": "_TRUE_VALUES = frozenset({\"1\", \"true\", \"yes\", \"on\"})\n\n\ndef enabled(value):\n    if value is None:\n        return False\n    return str(value).strip().lower() in _TRUE_VALUES\n"
+        },
+        "efficiency": {
+          "reads": {
+            "full": 0,
+            "delta": 0,
+            "unchanged": 0,
+            "emitted_tokens": 0,
+            "avoided_tokens": 0
+          },
+          "selection": {},
+          "injected_tokens": 0
+        }
+      },
+      {
+        "id": "1a77b470-2a44-43e5-adfb-7292864f6673",
+        "task": "environment-flags-v1:136d7424",
+        "variant": "memory",
+        "model": "claude-haiku-5-5",
+        "quality": 1,
+        "elapsed_ms": 13930.22,
+        "input_tokens": 8,
+        "output_tokens": 1006,
+        "cache_read_tokens": 40175,
+        "cache_creation_tokens": 1931,
+        "tool_calls": 5,
+        "failures": 0,
+        "cost_usd": 0.0012917500000000001,
+        "finish_reason": "success",
+        "cli_exit_code": 0,
+        "grader": "----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK",
+        "solution": {
+          "subject.py": "_TRUE_VALUES = frozenset({\"1\", \"true\", \"yes\", \"on\"})\n\n\ndef enabled(value):\n    if value is None:\n        return False\n    return str(value).strip().casefold() in _TRUE_VALUES\n"
+        },
+        "efficiency": {
+          "reads": {
+            "full": 0,
+            "delta": 0,
+            "unchanged": 0,
+            "emitted_tokens": 0,
+            "avoided_tokens": 0
+          },
+          "selection": {
+            "delivered": 1
+          },
+          "injected_tokens": 77
+        }
+      },
+      {
+        "id": "659b546f-e475-4003-926f-bf7a188744be",
+        "task": "environment-flags-v1:136d7424",
+        "variant": "memory",
+        "model": "claude-haiku-5-5",
+        "quality": 1,
+        "elapsed_ms": 13470.14,
+        "input_tokens": 8,
+        "output_tokens": 1028,
+        "cache_read_tokens": 40164,
+        "cache_creation_tokens": 1928,
+        "tool_calls": 5,
+        "failures": 0,
+        "cost_usd": 0.00130204,
+        "finish_reason": "success",
+        "cli_exit_code": 0,
+        "grader": "----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK",
+        "solution": {
+          "subject.py": "_TRUE_VALUES = frozenset({\"1\", \"true\", \"yes\", \"on\"})\n\n\ndef enabled(value):\n    if value is None:\n        return False\n    return str(value).strip().casefold() in _TRUE_VALUES\n"
+        },
+        "efficiency": {
+          "reads": {
+            "full": 0,
+            "delta": 0,
+            "unchanged": 0,
+            "emitted_tokens": 0,
+            "avoided_tokens": 0
+          },
+          "selection": {
+            "delivered": 1
+          },
+          "injected_tokens": 77
+        }
+      },
+      {
+        "id": "4903f1ac-eb37-4a19-9b31-216c9a943937",
+        "task": "environment-flags-v1:136d7424",
+        "variant": "baseline",
+        "model": "claude-haiku-5-5",
+        "quality": 1,
+        "elapsed_ms": 12667.22,
+        "input_tokens": 6,
+        "output_tokens": 908,
+        "cache_read_tokens": 30879,
+        "cache_creation_tokens": 3216,
+        "tool_calls": 4,
+        "failures": 1,
+        "cost_usd": 0.00140659,
+        "finish_reason": "success",
+        "cli_exit_code": 0,
+        "grader": "----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK",
+        "solution": {
+          "subject.py": "_TRUE_VALUES = frozenset({\"1\", \"true\", \"yes\", \"on\"})\n\n\ndef enabled(value):\n    if value is None:\n        return False\n    if isinstance(value, bool):\n        return value\n    return str(value).strip().lower() in _TRUE_VALUES\n"
+        },
+        "efficiency": {
+          "reads": {
+            "full": 0,
+            "delta": 0,
+            "unchanged": 0,
+            "emitted_tokens": 0,
+            "avoided_tokens": 0
+          },
+          "selection": {},
+          "injected_tokens": 0
+        }
+      },
+      {
+        "id": "6c02c64b-5ce3-4dd0-9e5a-521a3578b344",
+        "task": "expiry-units-v1:8fc8b834",
+        "variant": "baseline",
+        "model": "claude-haiku-5-5",
+        "quality": 1,
+        "elapsed_ms": 12675.95,
+        "input_tokens": 8,
+        "output_tokens": 913,
+        "cache_read_tokens": 39658,
+        "cache_creation_tokens": 2559,
+        "tool_calls": 5,
+        "failures": 1,
+        "cost_usd": 0.00136568,
+        "finish_reason": "success",
+        "cli_exit_code": 0,
+        "grader": "----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK",
+        "solution": {
+          "subject.py": "def expired(record, now_seconds):\n    expires_at = record[\"expires_at\"]\n    if record.get(\"unit\", \"seconds\") == \"milliseconds\":\n        expires_at = expires_at / 1000\n    return now_seconds >= expires_at\n"
+        },
+        "efficiency": {
+          "reads": {
+            "full": 0,
+            "delta": 0,
+            "unchanged": 0,
+            "emitted_tokens": 0,
+            "avoided_tokens": 0
+          },
+          "selection": {},
+          "injected_tokens": 0
+        }
+      },
+      {
+        "id": "6f0347ec-2b32-4bc0-942d-cddb3440fade",
+        "task": "expiry-units-v1:8fc8b834",
+        "variant": "memory",
+        "model": "claude-haiku-5-5",
+        "quality": 1,
+        "elapsed_ms": 12895.05,
+        "input_tokens": 8,
+        "output_tokens": 961,
+        "cache_read_tokens": 40465,
+        "cache_creation_tokens": 2076,
+        "tool_calls": 5,
+        "failures": 0,
+        "cost_usd": 0.00130115,
+        "finish_reason": "success",
+        "cli_exit_code": 0,
+        "grader": "----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK",
+        "solution": {
+          "subject.py": "def expired(record, now_seconds):\n    expires_at = record[\"expires_at\"]\n    if record.get(\"unit\", \"seconds\") == \"milliseconds\":\n        expires_at = expires_at / 1000\n    return now_seconds >= expires_at\n"
+        },
+        "efficiency": {
+          "reads": {
+            "full": 1,
+            "delta": 0,
+            "unchanged": 0,
+            "emitted_tokens": 75,
+            "avoided_tokens": 0
+          },
+          "selection": {
+            "delivered": 1
+          },
+          "injected_tokens": 73
+        }
+      },
+      {
+        "id": "dff740f9-6f6e-45d3-9cee-0b15017c116f",
+        "task": "expiry-units-v1:8fc8b834",
+        "variant": "memory",
+        "model": "claude-haiku-5-5",
+        "quality": 1,
+        "elapsed_ms": 15109.75,
+        "input_tokens": 10,
+        "output_tokens": 901,
+        "cache_read_tokens": 51403,
+        "cache_creation_tokens": 1957,
+        "tool_calls": 5,
+        "failures": 0,
+        "cost_usd": 0.0013569300000000001,
+        "finish_reason": "success",
+        "cli_exit_code": 0,
+        "grader": "----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK",
+        "solution": {
+          "subject.py": "def expired(record, now_seconds):\n    expires_at = record[\"expires_at\"]\n    if record.get(\"unit\", \"seconds\") == \"milliseconds\":\n        expires_at = expires_at / 1000\n    return now_seconds >= expires_at\n"
+        },
+        "efficiency": {
+          "reads": {
+            "full": 0,
+            "delta": 0,
+            "unchanged": 0,
+            "emitted_tokens": 0,
+            "avoided_tokens": 0
+          },
+          "selection": {
+            "delivered": 1
+          },
+          "injected_tokens": 73
+        }
+      },
+      {
+        "id": "df80dcbc-d332-4162-87bf-b81cf4ac5a56",
+        "task": "expiry-units-v1:8fc8b834",
+        "variant": "baseline",
+        "model": "claude-haiku-5-5",
+        "quality": 1,
+        "elapsed_ms": 14645.19,
+        "input_tokens": 10,
+        "output_tokens": 1340,
+        "cache_read_tokens": 51170,
+        "cache_creation_tokens": 2129,
+        "tool_calls": 5,
+        "failures": 0,
+        "cost_usd": 0.0016085000000000001,
+        "finish_reason": "success",
+        "cli_exit_code": 0,
+        "grader": "----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK",
+        "solution": {
+          "subject.py": "def expired(record, now_seconds):\n    expires_at = record[\"expires_at\"]\n    if record.get(\"unit\", \"seconds\") == \"milliseconds\":\n        # Compare in seconds: convert the record's expiry to seconds.\n        return now_seconds >= expires_at / 1000\n    return now_seconds >= expires_at\n"
+        },
+        "efficiency": {
+          "reads": {
+            "full": 0,
+            "delta": 0,
+            "unchanged": 0,
+            "emitted_tokens": 0,
+            "avoided_tokens": 0
+          },
+          "selection": {},
+          "injected_tokens": 0
+        }
+      },
+      {
+        "id": "18581090-e334-4074-9534-acb170b4af0b",
+        "task": "money-multifile-v1:dd8ccc6a",
+        "variant": "baseline",
+        "model": "claude-haiku-5-5",
+        "quality": 1,
+        "elapsed_ms": 18622.33,
+        "input_tokens": 12,
+        "output_tokens": 2115,
+        "cache_read_tokens": 65550,
+        "cache_creation_tokens": 4450,
+        "tool_calls": 10,
+        "failures": 0,
+        "cost_usd": 0.0026042,
+        "finish_reason": "success",
+        "cli_exit_code": 0,
+        "grader": "----------------------------------------------------------------------\nRan 3 tests in 0.000s\n\nOK",
+        "solution": {
+          "money.py": "from decimal import Decimal, ROUND_HALF_UP\n\n\ndef cents(value):\n    \"\"\"Convert a decimal amount (str, int, float or Decimal) to integer cents.\n\n    Ties are rounded half away from zero (ROUND_HALF_UP), so negative\n    half-cent values round toward larger magnitude as well.\n    \"\"\"\n    amount = Decimal(str(value)) * 100\n    return int(amount.quantize(Decimal(1), rounding=ROUND_HALF_UP))\n",
+          "cart.py": "from money import cents\ndef total(items):\n    return sum(cents(item[\"price\"]) * item[\"quantity\"] for item in items)\n",
+          "invoice.py": "from cart import total\ndef invoice(items):\n    return {\"currency\": \"BRL\", \"total_cents\": total(items)}\n"
+        },
+        "efficiency": {
+          "reads": {
+            "full": 0,
+            "delta": 0,
+            "unchanged": 0,
+            "emitted_tokens": 0,
+            "avoided_tokens": 0
+          },
+          "selection": {},
+          "injected_tokens": 0
+        }
+      },
+      {
+        "id": "375ab022-7566-4048-a788-1d82c24075f4",
+        "task": "money-multifile-v1:dd8ccc6a",
+        "variant": "memory",
+        "model": "claude-haiku-5-5",
+        "quality": 1,
+        "elapsed_ms": 15875.34,
+        "input_tokens": 10,
+        "output_tokens": 1771,
+        "cache_read_tokens": 54218,
+        "cache_creation_tokens": 3459,
+        "tool_calls": 8,
+        "failures": 0,
+        "cost_usd": 0.00212048,
+        "finish_reason": "success",
+        "cli_exit_code": 0,
+        "grader": "----------------------------------------------------------------------\nRan 3 tests in 0.000s\n\nOK",
+        "solution": {
+          "money.py": "from decimal import Decimal, ROUND_HALF_UP\n\n\ndef cents(value):\n    # Decimal(str(...)) avoids binary-float drift; ROUND_HALF_UP rounds ties\n    # away from zero, so negative half ties (e.g. -1.005) round to -101.\n    amount = Decimal(str(value)) * 100\n    return int(amount.quantize(Decimal(\"1\"), rounding=ROUND_HALF_UP))\n",
+          "cart.py": "from money import cents\ndef total(items):\n    # Round each unit price to cents first, then multiply by quantity.\n    return sum(cents(item[\"price\"]) * item[\"quantity\"] for item in items)\n",
+          "invoice.py": "from cart import total\ndef invoice(items):\n    return {\"currency\": \"BRL\", \"total_cents\": total(items)}\n"
+        },
+        "efficiency": {
+          "reads": {
+            "full": 3,
+            "delta": 0,
+            "unchanged": 0,
+            "emitted_tokens": 249,
+            "avoided_tokens": 0
+          },
+          "selection": {
+            "delivered": 1
+          },
+          "injected_tokens": 81
+        }
+      },
+      {
+        "id": "af60ec39-1f94-4887-8d42-217d0fe61f57",
+        "task": "money-multifile-v1:dd8ccc6a",
+        "variant": "memory",
+        "model": "claude-haiku-5-5",
+        "quality": 1,
+        "elapsed_ms": 17995.7,
+        "input_tokens": 12,
+        "output_tokens": 2052,
+        "cache_read_tokens": 67907,
+        "cache_creation_tokens": 4192,
+        "tool_calls": 10,
+        "failures": 0,
+        "cost_usd": 0.00254467,
+        "finish_reason": "success",
+        "cli_exit_code": 0,
+        "grader": "----------------------------------------------------------------------\nRan 3 tests in 0.000s\n\nOK",
+        "solution": {
+          "money.py": "from decimal import Decimal, ROUND_HALF_UP\n\n\ndef cents(value):\n    \"\"\"Convert a decimal amount (str, int, Decimal or float) to integer cents.\n\n    Uses Decimal(str(value)) to avoid binary-float drift and rounds half up\n    (ties away from zero, so -1.005 -> -101).\n    \"\"\"\n    amount = Decimal(str(value)) * 100\n    return int(amount.quantize(Decimal(\"1\"), rounding=ROUND_HALF_UP))\n",
+          "cart.py": "from money import cents\ndef total(items):\n    return sum(cents(item[\"price\"]) * item[\"quantity\"] for item in items)\n",
+          "invoice.py": "from cart import total\ndef invoice(items):\n    return {\"currency\": \"BRL\", \"total_cents\": total(items)}\n"
+        },
+        "efficiency": {
+          "reads": {
+            "full": 3,
+            "delta": 0,
+            "unchanged": 0,
+            "emitted_tokens": 249,
+            "avoided_tokens": 0
+          },
+          "selection": {
+            "delivered": 1
+          },
+          "injected_tokens": 81
+        }
+      },
+      {
+        "id": "b5bcd508-4fc6-4e8d-a2c0-d6513cfce152",
+        "task": "money-multifile-v1:dd8ccc6a",
+        "variant": "baseline",
+        "model": "claude-haiku-5-5",
+        "quality": 1,
+        "elapsed_ms": 53104.29,
+        "input_tokens": 12,
+        "output_tokens": 2173,
+        "cache_read_tokens": 67037,
+        "cache_creation_tokens": 4129,
+        "tool_calls": 10,
+        "failures": 0,
+        "cost_usd": 0.00258387,
+        "finish_reason": "success",
+        "cli_exit_code": 0,
+        "grader": "----------------------------------------------------------------------\nRan 3 tests in 0.000s\n\nOK",
+        "solution": {
+          "money.py": "from decimal import Decimal, ROUND_HALF_UP\n\n\ndef cents(value):\n    \"\"\"Convert a decimal amount (str, int, float or Decimal) to integer cents.\n\n    Uses the string form of the value to avoid binary float artifacts and\n    rounds half away from zero (ROUND_HALF_UP), including negative ties.\n    \"\"\"\n    amount = Decimal(str(value)) * 100\n    return int(amount.quantize(Decimal(1), rounding=ROUND_HALF_UP))\n",
+          "cart.py": "from money import cents\ndef total(items):\n    return sum(cents(item[\"price\"]) * item[\"quantity\"] for item in items)\n",
+          "invoice.py": "from cart import total\ndef invoice(items):\n    return {\"currency\": \"BRL\", \"total_cents\": total(items)}\n"
+        },
+        "efficiency": {
+          "reads": {
+            "full": 0,
+            "delta": 0,
+            "unchanged": 0,
+            "emitted_tokens": 0,
+            "avoided_tokens": 0
+          },
+          "selection": {},
+          "injected_tokens": 0
+        }
+      },
+      {
+        "id": "a629f15e-c233-471c-8d1f-134c3729c2c2",
+        "task": "parser-refactor-v1:0306a51b",
+        "variant": "baseline",
+        "model": "claude-haiku-5-5",
+        "quality": 1,
+        "elapsed_ms": 18701.49,
+        "input_tokens": 10,
+        "output_tokens": 2216,
+        "cache_read_tokens": 53539,
+        "cache_creation_tokens": 4575,
+        "tool_calls": 10,
+        "failures": 0,
+        "cost_usd": 0.00255939,
+        "finish_reason": "success",
+        "cli_exit_code": 0,
+        "grader": "----------------------------------------------------------------------\nRan 3 tests in 0.000s\n\nOK",
+        "solution": {
+          "flags.py": "TRUE_VALUES = frozenset({\"1\", \"true\", \"yes\", \"on\"})\n\n\ndef parse_flag(value):\n    if not isinstance(value, str):\n        return False\n    return value.strip().lower() in TRUE_VALUES\n",
+          "api.py": "from flags import parse_flag\n\n\ndef api_enabled(config):\n    return parse_flag(config.get(\"enabled\"))\n",
+          "worker.py": "from flags import parse_flag\n\n\ndef worker_enabled(config):\n    return parse_flag(config.get(\"enabled\"))\n"
+        },
+        "efficiency": {
+          "reads": {
+            "full": 0,
+            "delta": 0,
+            "unchanged": 0,
+            "emitted_tokens": 0,
+            "avoided_tokens": 0
+          },
+          "selection": {},
+          "injected_tokens": 0
+        }
+      },
+      {
+        "id": "1dfc8e87-a577-4660-be24-6caa27b86def",
+        "task": "parser-refactor-v1:0306a51b",
+        "variant": "memory",
+        "model": "claude-haiku-5-5",
+        "quality": 1,
+        "elapsed_ms": 17943.66,
+        "input_tokens": 10,
+        "output_tokens": 2236,
+        "cache_read_tokens": 53986,
+        "cache_creation_tokens": 3762,
+        "tool_calls": 9,
+        "failures": 0,
+        "cost_usd": 0.00241126,
+        "finish_reason": "success",
+        "cli_exit_code": 0,
+        "grader": "----------------------------------------------------------------------\nRan 3 tests in 0.000s\n\nOK",
+        "solution": {
+          "flags.py": "_TRUE_VALUES = frozenset({\"1\", \"true\", \"yes\", \"on\"})\n\n\ndef parse_flag(value):\n    if value is None:\n        return False\n    return str(value).strip().casefold() in _TRUE_VALUES\n",
+          "api.py": "from flags import parse_flag\n\n\ndef api_enabled(config):\n    return parse_flag(config.get(\"enabled\"))\n",
+          "worker.py": "from flags import parse_flag\n\n\ndef worker_enabled(config):\n    return parse_flag(config.get(\"enabled\"))\n"
+        },
+        "efficiency": {
+          "reads": {
+            "full": 0,
+            "delta": 0,
+            "unchanged": 0,
+            "emitted_tokens": 0,
+            "avoided_tokens": 0
+          },
+          "selection": {
+            "delivered": 1
+          },
+          "injected_tokens": 81
+        }
+      },
+      {
+        "id": "5deb32a3-6b9d-4f11-a24e-1d8b2f6bb5fc",
+        "task": "parser-refactor-v1:0306a51b",
+        "variant": "memory",
+        "model": "claude-haiku-5-5",
+        "quality": 1,
+        "elapsed_ms": 20945.18,
+        "input_tokens": 12,
+        "output_tokens": 2742,
+        "cache_read_tokens": 69460,
+        "cache_creation_tokens": 5106,
+        "tool_calls": 12,
+        "failures": 0,
+        "cost_usd": 0.003088,
+        "finish_reason": "success",
+        "cli_exit_code": 0,
+        "grader": "----------------------------------------------------------------------\nRan 3 tests in 0.000s\n\nOK",
+        "solution": {
+          "flags.py": "TRUE_VALUES = frozenset({\"1\", \"true\", \"yes\", \"on\"})\n\n\ndef parse_flag(value):\n    if value is None:\n        return False\n    return str(value).strip().casefold() in TRUE_VALUES\n",
+          "api.py": "from flags import parse_flag\n\n\ndef api_enabled(config):\n    return parse_flag(config.get(\"enabled\"))\n",
+          "worker.py": "from flags import parse_flag\n\n\ndef worker_enabled(config):\n    return parse_flag(config.get(\"enabled\"))\n"
+        },
+        "efficiency": {
+          "reads": {
+            "full": 4,
+            "delta": 0,
+            "unchanged": 0,
+            "emitted_tokens": 551,
+            "avoided_tokens": 0
+          },
+          "selection": {
+            "delivered": 1
+          },
+          "injected_tokens": 81
+        }
+      },
+      {
+        "id": "ccbd0d4f-d998-490a-bb54-0cb8eb3bebf4",
+        "task": "parser-refactor-v1:0306a51b",
+        "variant": "baseline",
+        "model": "claude-haiku-5-5",
+        "quality": 1,
+        "elapsed_ms": 16080.29,
+        "input_tokens": 8,
+        "output_tokens": 2206,
+        "cache_read_tokens": 41948,
+        "cache_creation_tokens": 4297,
+        "tool_calls": 10,
+        "failures": 1,
+        "cost_usd": 0.00238268,
+        "finish_reason": "success",
+        "cli_exit_code": 0,
+        "grader": "----------------------------------------------------------------------\nRan 3 tests in 0.000s\n\nOK",
+        "solution": {
+          "flags.py": "_TRUE_VALUES = frozenset({\"1\", \"true\", \"yes\", \"on\"})\n\n\ndef parse_flag(value):\n    if not isinstance(value, str):\n        return False\n    return value.strip().lower() in _TRUE_VALUES\n",
+          "api.py": "from flags import parse_flag\n\n\ndef api_enabled(config):\n    return parse_flag(config.get(\"enabled\"))\n",
+          "worker.py": "from flags import parse_flag\n\n\ndef worker_enabled(config):\n    return parse_flag(config.get(\"enabled\"))\n"
+        },
+        "efficiency": {
+          "reads": {
+            "full": 0,
+            "delta": 0,
+            "unchanged": 0,
+            "emitted_tokens": 0,
+            "avoided_tokens": 0
+          },
+          "selection": {},
+          "injected_tokens": 0
+        }
+      },
+      {
+        "id": "e528579d-a80d-4c11-a437-4adacc89b342",
+        "task": "resume-expiry-v1:ec863a7c",
+        "variant": "baseline",
+        "model": "claude-haiku-5-5",
+        "quality": 1,
+        "elapsed_ms": 15436.93,
+        "input_tokens": 8,
+        "output_tokens": 1891,
+        "cache_read_tokens": 40466,
+        "cache_creation_tokens": 3951,
+        "tool_calls": 9,
+        "failures": 0,
+        "cost_usd": 0.00214116,
+        "finish_reason": "success",
+        "cli_exit_code": 0,
+        "grader": "----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK",
+        "solution": {
+          "clock_units.py": "def seconds(record):\n    value = record[\"expires_at\"]\n    return value / 1000 if record.get(\"unit\", \"seconds\") == \"milliseconds\" else value\n",
+          "cache.py": "from clock_units import seconds\n\n\ndef active(records, now):\n    return [r for r in records if now < seconds(r)]\n",
+          "cleanup.py": "from clock_units import seconds\n\n\ndef expired_ids(records, now):\n    return [r[\"id\"] for r in records if now >= seconds(r)]\n"
+        },
+        "efficiency": {
+          "reads": {
+            "full": 0,
+            "delta": 0,
+            "unchanged": 0,
+            "emitted_tokens": 0,
+            "avoided_tokens": 0
+          },
+          "selection": {},
+          "injected_tokens": 0
+        }
+      },
+      {
+        "id": "cf79ee9e-99f9-4092-bee2-9bb573e03784",
+        "task": "resume-expiry-v1:ec863a7c",
+        "variant": "memory",
+        "model": "claude-haiku-5-5",
+        "quality": 1,
+        "elapsed_ms": 16288.4,
+        "input_tokens": 10,
+        "output_tokens": 1887,
+        "cache_read_tokens": 54824,
+        "cache_creation_tokens": 3636,
+        "tool_calls": 9,
+        "failures": 0,
+        "cost_usd": 0.00221994,
+        "finish_reason": "success",
+        "cli_exit_code": 0,
+        "grader": "----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK",
+        "solution": {
+          "clock_units.py": "def seconds(record):\n    value = record[\"expires_at\"]\n    return value / 1000 if record.get(\"unit\", \"seconds\") == \"milliseconds\" else value\n",
+          "cache.py": "from clock_units import seconds\n\n\ndef active(records, now):\n    return [r for r in records if now < seconds(r)]\n",
+          "cleanup.py": "from clock_units import seconds\n\n\ndef expired_ids(records, now):\n    return [r[\"id\"] for r in records if now >= seconds(r)]\n"
+        },
+        "efficiency": {
+          "reads": {
+            "full": 0,
+            "delta": 0,
+            "unchanged": 0,
+            "emitted_tokens": 0,
+            "avoided_tokens": 0
+          },
+          "selection": {
+            "delivered": 1
+          },
+          "injected_tokens": 166
+        }
+      },
+      {
+        "id": "6348e1d2-8d6f-4c53-b860-3ecbdbb78ef7",
+        "task": "resume-expiry-v1:ec863a7c",
+        "variant": "memory",
+        "model": "claude-haiku-5-5",
+        "quality": 1,
+        "elapsed_ms": 16307.84,
+        "input_tokens": 10,
+        "output_tokens": 1893,
+        "cache_read_tokens": 54770,
+        "cache_creation_tokens": 3675,
+        "tool_calls": 9,
+        "failures": 0,
+        "cost_usd": 0.0022302,
+        "finish_reason": "success",
+        "cli_exit_code": 0,
+        "grader": "----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK",
+        "solution": {
+          "clock_units.py": "def seconds(record):\n    value = record[\"expires_at\"]\n    return value / 1000 if record.get(\"unit\", \"seconds\") == \"milliseconds\" else value\n",
+          "cache.py": "from clock_units import seconds\n\n\ndef active(records, now):\n    return [r for r in records if now < seconds(r)]\n",
+          "cleanup.py": "from clock_units import seconds\n\n\ndef expired_ids(records, now):\n    return [r[\"id\"] for r in records if seconds(r) <= now]\n"
+        },
+        "efficiency": {
+          "reads": {
+            "full": 0,
+            "delta": 0,
+            "unchanged": 0,
+            "emitted_tokens": 0,
+            "avoided_tokens": 0
+          },
+          "selection": {
+            "delivered": 1
+          },
+          "injected_tokens": 168
+        }
+      },
+      {
+        "id": "cc33a532-9cc8-463f-93c1-68de46498b18",
+        "task": "resume-expiry-v1:ec863a7c",
+        "variant": "baseline",
+        "model": "claude-haiku-5-5",
+        "quality": 1,
+        "elapsed_ms": 19221.5,
+        "input_tokens": 12,
+        "output_tokens": 1921,
+        "cache_read_tokens": 65210,
+        "cache_creation_tokens": 3391,
+        "tool_calls": 9,
+        "failures": 0,
+        "cost_usd": 0.002292,
+        "finish_reason": "success",
+        "cli_exit_code": 0,
+        "grader": "----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK",
+        "solution": {
+          "clock_units.py": "def seconds(record):\n    value = record[\"expires_at\"]\n    return value / 1000 if record.get(\"unit\", \"seconds\") == \"milliseconds\" else value\n",
+          "cache.py": "from clock_units import seconds\n\n\ndef active(records, now):\n    return [r for r in records if now < seconds(r)]\n",
+          "cleanup.py": "from clock_units import seconds\n\n\ndef expired_ids(records, now):\n    return [r[\"id\"] for r in records if now >= seconds(r)]\n"
+        },
+        "efficiency": {
+          "reads": {
+            "full": 0,
+            "delta": 0,
+            "unchanged": 0,
+            "emitted_tokens": 0,
+            "avoided_tokens": 0
+          },
+          "selection": {},
+          "injected_tokens": 0
+        }
+      }
+    ],
+    "comparisons": [
+      {
+        "task": "environment-flags-v1:136d7424",
+        "model": "claude-haiku-5-5",
+        "baseline": {
+          "task": "environment-flags-v1:136d7424",
+          "model": "claude-haiku-5-5",
+          "variant": "baseline",
+          "runs": 2,
+          "quality": 1,
+          "elapsed_ms": 14603.404999999999,
+          "tokens": 44249.5,
+          "tool_calls": 4.5,
+          "failures": 0.5,
+          "cost_usd": 0.0022528450000000003
+        },
+        "memory": {
+          "task": "environment-flags-v1:136d7424",
+          "model": "claude-haiku-5-5",
+          "variant": "memory",
+          "runs": 2,
+          "quality": 1,
+          "elapsed_ms": 13700.18,
+          "tokens": 43124,
+          "tool_calls": 5,
+          "failures": 0,
+          "cost_usd": 0.0012968950000000002
+        },
+        "token_change_percent": -2.54,
+        "quality_preserved": true,
+        "note": "Observed task samples; not a guarantee of savings or subscription limits"
+      },
+      {
+        "task": "expiry-units-v1:8fc8b834",
+        "model": "claude-haiku-5-5",
+        "baseline": {
+          "task": "expiry-units-v1:8fc8b834",
+          "model": "claude-haiku-5-5",
+          "variant": "baseline",
+          "runs": 2,
+          "quality": 1,
+          "elapsed_ms": 13660.57,
+          "tokens": 48893.5,
+          "tool_calls": 5,
+          "failures": 0.5,
+          "cost_usd": 0.00148709
+        },
+        "memory": {
+          "task": "expiry-units-v1:8fc8b834",
+          "model": "claude-haiku-5-5",
+          "variant": "memory",
+          "runs": 2,
+          "quality": 1,
+          "elapsed_ms": 14002.4,
+          "tokens": 48890.5,
+          "tool_calls": 5,
+          "failures": 0,
+          "cost_usd": 0.00132904
+        },
+        "token_change_percent": -0.01,
+        "quality_preserved": true,
+        "note": "Observed task samples; not a guarantee of savings or subscription limits"
+      },
+      {
+        "task": "money-multifile-v1:dd8ccc6a",
+        "model": "claude-haiku-5-5",
+        "baseline": {
+          "task": "money-multifile-v1:dd8ccc6a",
+          "model": "claude-haiku-5-5",
+          "variant": "baseline",
+          "runs": 2,
+          "quality": 1,
+          "elapsed_ms": 35863.31,
+          "tokens": 72739,
+          "tool_calls": 10,
+          "failures": 0,
+          "cost_usd": 0.0025940349999999997
+        },
+        "memory": {
+          "task": "money-multifile-v1:dd8ccc6a",
+          "model": "claude-haiku-5-5",
+          "variant": "memory",
+          "runs": 2,
+          "quality": 1,
+          "elapsed_ms": 16935.52,
+          "tokens": 66810.5,
+          "tool_calls": 9,
+          "failures": 0,
+          "cost_usd": 0.002332575
+        },
+        "token_change_percent": -8.15,
+        "quality_preserved": true,
+        "note": "Observed task samples; not a guarantee of savings or subscription limits"
+      },
+      {
+        "task": "parser-refactor-v1:0306a51b",
+        "model": "claude-haiku-5-5",
+        "baseline": {
+          "task": "parser-refactor-v1:0306a51b",
+          "model": "claude-haiku-5-5",
+          "variant": "baseline",
+          "runs": 2,
+          "quality": 1,
+          "elapsed_ms": 17390.89,
+          "tokens": 54399.5,
+          "tool_calls": 10,
+          "failures": 0.5,
+          "cost_usd": 0.002471035
+        },
+        "memory": {
+          "task": "parser-refactor-v1:0306a51b",
+          "model": "claude-haiku-5-5",
+          "variant": "memory",
+          "runs": 2,
+          "quality": 1,
+          "elapsed_ms": 19444.42,
+          "tokens": 68657,
+          "tool_calls": 10.5,
+          "failures": 0,
+          "cost_usd": 0.0027496300000000003
+        },
+        "token_change_percent": 26.21,
+        "quality_preserved": true,
+        "note": "Observed task samples; not a guarantee of savings or subscription limits"
+      },
+      {
+        "task": "resume-expiry-v1:ec863a7c",
+        "model": "claude-haiku-5-5",
+        "baseline": {
+          "task": "resume-expiry-v1:ec863a7c",
+          "model": "claude-haiku-5-5",
+          "variant": "baseline",
+          "runs": 2,
+          "quality": 1,
+          "elapsed_ms": 17329.215,
+          "tokens": 58425,
+          "tool_calls": 9,
+          "failures": 0,
+          "cost_usd": 0.00221658
+        },
+        "memory": {
+          "task": "resume-expiry-v1:ec863a7c",
+          "model": "claude-haiku-5-5",
+          "variant": "memory",
+          "runs": 2,
+          "quality": 1,
+          "elapsed_ms": 16298.119999999999,
+          "tokens": 60352.5,
+          "tool_calls": 9,
+          "failures": 0,
+          "cost_usd": 0.00222507
+        },
+        "token_change_percent": 3.3,
+        "quality_preserved": true,
+        "note": "Observed task samples; not a guarantee of savings or subscription limits"
+      }
+    ],
+    "regression": {
+      "evaluated": true,
+      "passed": false,
+      "max_increase_percent": 25,
+      "failures": [
+        {
+          "task": "parser-refactor-v1:0306a51b",
+          "reason": "tokens",
+          "change_percent": 26.21
+        }
+      ]
+    }
+  },
+  "validation": {
+    "python_tests_passed": 287,
+    "browser_scenarios_passed": 2,
+    "scoped_python_typecheck": "passed for learning, hooks, MCP app/learn tool and HTTP server",
+    "full_repo_python_typecheck": "Other existing modules still report type errors (extractors, embeddings, clustering, storage and summarization).",
+    "frontend": "Vue typecheck, ESLint and production build passed; Vite reports a 576.62 kB shared chunk before gzip.",
+    "docs_build": "passed",
+    "installed_version": "0.11.0",
+    "installed_daemon": "running; semantic ready",
+    "real_semantic_check": {
+      "real_multilingual_paraphrases_merged": true,
+      "three_independent_sessions": true,
+      "cross_project_hook_injected": true,
+      "second_hook_empty": true,
+      "irrelevant_hook_empty": true
+    },
+    "subprocess_hook_ms": [
+      144.92,
+      132.45,
+      136.14,
+      160.19,
+      142.17,
+      147.62
+    ]
+  }
+}

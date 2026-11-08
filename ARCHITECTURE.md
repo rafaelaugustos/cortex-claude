@@ -4,6 +4,32 @@
 
 ---
 
+## Shared learning (current implementation)
+
+`learning/` implements the observe → consolidate → retrieve → correct cycle. It is the default automatic-context path; the archive/code-graph architecture below remains available for explicit searches and reference storage.
+
+One `learning.db` contains lessons, independent evidence, session budgets and delivery receipts. Origin is provenance, not a separate database. Personal observations become shared after `learning.confirmations` distinct sessions (default 3). Transferable lessons additionally require `learning.min_contexts` distinct origins (default 2). Context facts never become universal through repetition. Explicit user standing instructions bypass the confirmation threshold. Stable topic keys identify corrections; superseded notes are not retrieved or silently reactivated by old evidence.
+
+The lightweight `UserPromptSubmit` handler recognizes direct EN/PT preferences. Nuanced observations come from the working assistant through `cortex_learn`, without a separate extraction-model call. `semantic.py` provides bounded Unix-socket calls to resident multilingual embeddings in the daemon. High-confidence similarity plus polarity, identifier, topic/origin and condition gates permit consolidation; ambiguous matches stay separate. Model-specific vectors are persisted and backfilled. A missing/slow model falls back to bilingual lexical matching. Runtime loading uses a local Hugging Face snapshot directory and does not download files.
+
+Schema v2 adds conditional applicability, file SHA-256 snapshots, expiry, episode details, verified outcomes, progressive delivery receipts, main-transcript usage and task comparisons. The additive upgrade is transactional and keeps v1 lessons/evidence. Specific applicable preferences override generic ones; file changes/expiry move lessons to `stale`. Explicit corrections or a new successful episode verification are needed before reuse.
+
+Schema v3 adds selection reasons, explicit usefulness feedback, conflict review, versioned work checkpoints and session-local file-read receipts. `selection.py` omits acknowledgements and compatible conclusions already present in a statement; questions still retrieve missing answers. Feedback is upserted per lesson/session, matched with hashed task cues and never changes evidence. Three negative votes can suppress similar-task retrieval. `conflicts.py` holds divergent preferences for an explicit choice or conditional correction; neither automatic nor detail retrieval bypasses review.
+
+`reading.py` bounds UTF-8 reads to the repository, redacts private spans before caching and returns full/diff/unchanged responses within the requested budget. The cache is keyed by session, origin, path and range. Unknown/concurrent callers receive full content; compaction clears bases. Native editor read receipts cannot be manufactured by an MCP tool, so the assistant uses native Read directly when preparing an Edit. `tasks.py` stores at most 240 tokens of checkpoint fields in the same database, with origin matching, 14-day validity, dependency hashes and optimistic revision checks. Automatic resumption shares the ordinary context budget and abstains on ambiguous or stale checkpoints.
+
+The dashboard uses Vue 3, Mavis Web/core 0.1.0-rc.12.1 and Jolt at the same release. Local SVG icons avoid the full icon font; archive/graph views load on demand. Mavis owns control semantics, dialogs, sheets and themes. Browser tests run the production bundle against the actual HTTP handlers with disposable databases. The localhost Host/Origin checks remain in force.
+
+`experiences.py` stores situation/cause/solution. Successful recognized test runs create session/origin-bound receipts; a current receipt and the working assistant's association are needed to validate an episode. Test success proves only what those tests cover. Hypotheses are excluded from retrieval, and failed applications suspend reuse. Independent successful outcomes supply evidence. Detail reads preserve scope/conditions/freshness, are deduplicated and share the session budget with automatic context.
+
+Automatic context is capped at 180 estimated tokens per prompt (96 for short/weak matches) and 600 per session including details. Compaction resets delivery receipts. `Stop` incrementally reads provider usage from the main transcript, retaining counters rather than content; repeated streaming message IDs use per-counter maxima. It handles partial writes and oversized records with bounded scans. Subagent usage and subscription limits are not inferred. Matched task reports preserve quality, token/cache counts, failures and time rather than presenting deduplication as total savings.
+
+`hooks.py` imports neither PyTorch nor spaCy. SessionStart does no synchronous model work. PostToolUse records test receipts synchronously and keeps code indexing; raw capture is opt-in. Stop telemetry is asynchronous. Setup backs up configuration and preserves unrelated hooks/instructions.
+
+`scripts/evaluate_learning.py` exercises the local lifecycle. `evaluate_semantic.py` exercises the resident model, socket and real prompt subprocesses. `evaluate_tasks.py` optionally runs the same isolated coding tasks through Claude with learning on/off and an independent grader. No synthetic lessons are seeded into the user's actual memory. Semantic similarity remains heuristic; lexical condition cues and tracked-file lists must be supplied accurately.
+
+---
+
 ## Table of Contents
 
 1. [Vision & Goals](#vision--goals)
@@ -1385,3 +1411,26 @@ This is an accepted tradeoff of the current design (local NLP + local embeddings
 ---
 
 *This document is the single source of truth for the Cortex Claude architecture. All implementation should follow this specification. Update this document when architectural decisions change.*
+
+### Project knowledge and execution history
+
+Learning schema v4 adds `project_profiles`, `project_notes`, and session/revision deliveries in the same `learning.db`. Bounded, read-only manifest scanning produces declared structure; the working assistant adds sourced synthesis. Fingerprints suspend stale conclusions without erasing their evidence. Project context uses the existing automatic token budget.
+
+Archive schema v9 transactionally moves explicitly tagged automatic tool transcripts into `execution_history`, preserving associated facts/vectors in `execution_facts` and `execution_vectors`. FTS and active vectors are removed together; affected clusters are invalidated. The migration rolls back on failure. Manual command documentation remains in normal retrieval.
+
+## Durable recovery (0.13.0)
+
+`reliability/queue.py` journals minimized hook events before acknowledging them. One file lock serializes replay across hook/daemon processes, receipts deduplicate completed work, and failed events block only their own session group. Database effects and the automatic checkpoint ordering cursor commit together. File-backed receipts permit replay after a process dies between the effect and acknowledgment; learning evidence and checkpoint updates are idempotent by event identity. Malformed queue files remain intact and visible while valid jobs continue.
+
+Learning schema v5 adds automatic checkpoint metadata and durable-write timestamps. Automatic capture locks before reading the current task revision, so a manually reviewed checkpoint remains authoritative. Background project refresh and code indexing acknowledge only after their tasks finish. The daemon owns one process lock before engine initialization, drains pending jobs and performs verified backups. macOS LaunchAgents keep both daemon and localhost dashboard alive across user logins.
+
+Backups use SQLite's online backup API, a staging directory, checksums, integrity/foreign-key checks and a publish rename. Restoration validates before publishing into a new directory. The HTTP health endpoint avoids modifying databases so failure information remains accessible even when the learning store cannot open. Codex global MCP settings share the same base as Claude; setup never modifies Codex hook-trust state.
+## Reliability and project evidence in 0.14
+
+`reliability/probe.py` exercises hook handlers in separate processes, then opens independent MCP sessions and tests a snapshot restore. Its entire memory store is disposable. Only the result metadata is persisted in the live recovery directory, so synthetic events cannot inflate real client timestamps or learning statistics.
+
+`reliability/diagnostics.py` records bounded status transitions from the daemon worker. The web probe checks a hashed home identity, allowing it to distinguish an unavailable dashboard from one connected to another memory directory. Errors retain their categories without conversation content. Client capture/save/context stages come from actual hook processing, separately from MCP connection receipts.
+
+`learning/analysis.py` stores additive `project_code_cache` rows in the shared database. File identity, size and nanosecond metadata allow unchanged evidence to be reused; changed content is hashed and parsed within file/byte budgets. Static call candidates remain explicitly unresolved where appropriate. `projects.py` exposes a review queue for conclusions whose source fingerprints changed. Refreshing structural evidence never revalidates those conclusions. Optional parser gaps and bounded coverage are public data, not hidden success conditions.
+
+The package retains learning schema 5 for additive compatibility with 0.13.0. `scripts/release.py` verifies actual wheel installation across upgrade/downgrade cycles, and compares independently rebuilt wheel hashes. Evaluation records distinguish clients and normalize Codex cached input to avoid double counting. No local procedure publishes a release.

@@ -1,0 +1,66 @@
+{
+  "version": "0.14.0",
+  "python_full_suite": {
+    "passed": 328
+  },
+  "project_and_learning_regressions": {
+    "passed": 35
+  },
+  "file_descriptor_recovery_and_http_regressions": {
+    "passed": 29
+  },
+  "launchd_retry_regression": {
+    "passed": 1
+  },
+  "browser_scenarios": {
+    "passed": 6
+  },
+  "live_evaluation_runs": {
+    "passed_independent_grader": 8
+  },
+  "codex_hook_activation": "deferred by user",
+  "backup_destination": "local only",
+  "remote_ci": "not run in this session",
+  "package": {
+    "version": "0.14.0",
+    "wheel": "cortex_claude-0.14.0-py3-none-any.whl",
+    "sha256": "f7cdb00374afd8f2c5a7ec71bb500fbb0e42331c456c14dbd3937d3e9b673591",
+    "reproducible": true
+  },
+  "upgrade_and_rollback": {
+    "passed": true,
+    "scope": "disposable-virtualenv-and-database",
+    "stages": [
+      {
+        "phase": "seed",
+        "version": "0.13.0",
+        "notes": 1,
+        "checkpoints": 1,
+        "integrity": "ok"
+      },
+      {
+        "phase": "upgrade",
+        "version": "0.14.0",
+        "notes": 1,
+        "checkpoints": 1,
+        "integrity": "ok"
+      },
+      {
+        "phase": "rollback",
+        "version": "0.13.0",
+        "notes": 1,
+        "checkpoints": 1,
+        "integrity": "ok"
+      },
+      {
+        "phase": "upgrade-again",
+        "version": "0.14.0",
+        "notes": 1,
+        "checkpoints": 1,
+        "integrity": "ok"
+      }
+    ],
+    "current_sha256": "f7cdb00374afd8f2c5a7ec71bb500fbb0e42331c456c14dbd3937d3e9b673591",
+    "previous_sha256": "31e8b285faa9bd8898bd66a339126d0d499bff4fde2714983f267cee2cbc5359"
+  }
+}

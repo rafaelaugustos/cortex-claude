@@ -6,14 +6,14 @@
   <br>
 </h1>
 
-<h4 align="center">Memory that remembers what matters. Built for <a href="https://claude.ai/claude-code" target="_blank">Claude Code</a>.</h4>
+<h4 align="center">Memory that remembers what matters. Built for <a href="https://claude.ai/claude-code" target="_blank">Claude Code</a> and Codex.</h4>
 
 <p align="center">
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License">
   </a>
   <a href="pyproject.toml">
-    <img src="https://img.shields.io/badge/version-0.8.0-green.svg" alt="Version">
+    <img src="https://img.shields.io/badge/version-0.13.0-green.svg" alt="Version">
   </a>
   <a href="pyproject.toml">
     <img src="https://img.shields.io/badge/python-%3E%3D3.11-brightgreen.svg" alt="Python">
@@ -63,9 +63,88 @@ Layer 2: Summary (~25% of original)
 Layer 3: Full content (only if needed)
 ```
 
-The system stops at the cheapest layer that answers the question. **66% fewer tokens** on average.
+Archive recall uses token-budget and confidence heuristics to decide how much context to return. Shared learning adds relevant, compact context before the user prompt is processed.
 
 ---
+
+## Shared learning
+
+Cortex keeps one shared `learning.db`, independent of legacy archive scopes. Three independent sessions consolidate a personal preference; transferable experiences also require two origins. Retrieval never counts as evidence. Explicit standing user instructions can apply immediately, while project facts remain tied to their origin.
+
+- **Local semantic matching:** a resident multilingual model recognizes high-confidence paraphrases. Negation, opposing preferences, numbers, technical identifiers and task conditions prevent unsafe merges. Ambiguous matches stay separate. Hooks wait at most 250 ms for embeddings, then continue with lexical matching.
+- **Verified experiences:** `cortex_learn action="experience"` stores a conclusion plus situation, cause and solution. A successful test receipt from the current session is required for reuse. Unverified episodes remain hypotheses; a failed application suspends reuse. The assistant must judge whether that test actually verifies the solution.
+- **Conditions and validity:** `all`/`any`/`none` task cues express exceptions. Matching exceptions override generic preferences. Changes to explicitly tracked files, expiry (90 days by default for experiences) or failed verification require revalidation.
+- **Progressive retrieval:** automatic context contains compact conclusions; `cortex_learn action="read"` fetches details only when needed. Defaults: up to 180 estimated tokens per prompt, reduced for short/weak matches, and 600 per session including details. Duplicate delivery is suppressed until compaction.
+- **Observable results:** the dashboard shows provenance, verification commands, conditions, stale lessons, injected context, provider token counters from main-session transcripts, and matched task evaluations. It does not infer total savings from context deduplication.
+- **Useful additions only:** acknowledgements and conclusions already supplied in the prompt are omitted. Explicit usefulness feedback adjusts ranking without creating evidence; repeated negative feedback can suppress irrelevant lessons for similar tasks.
+- **Incremental reads:** `cortex_read` returns bounded lines, then verified diffs or an unchanged marker within the same session. A new/ambiguous session receives full content. Native editors that require their own Read receipt should use that Read directly before editing.
+- **Task continuity:** `cortex_task` stores an objective, decisions, pending work and next step in at most 240 tokens. Checkpoints live in the shared database, are matched to their repository, expire after 14 days and are checked against file hashes. Revisions prevent stale updates.
+- **Conflict review:** divergent conclusions stop automatic reuse. The dashboard lets you choose one or add conditions; ordinary repetition cannot silently override a conflict.
+
+The prompt extractor recognizes direct EN/PT preferences, not arbitrary prose. The assistant already working on the task supplies nuanced observations and experiences; no extra LLM call runs per prompt. Legacy archives are preserved and never silently promoted into trusted preferences.
+
+From a source checkout, update hooks, prepare the local model once, and restart Claude Code:
+
+```bash
+uv run cortex-claude setup --hooks-only
+uv run cortex-claude learning prepare
+uv run cortex-claude learning status
+uv run cortex-claude learning context "Implement an endpoint"
+uv run python scripts/evaluate_learning.py
+uv run python scripts/evaluate_semantic.py --output /tmp/cortex-semantic.json
+uv run python scripts/evaluate_tasks.py --output /tmp/cortex-tasks-offline.json
+# Optional: uses your Claude account. Same model/tools and independent tests in both arms.
+uv run python scripts/evaluate_tasks.py --live --repeats 2 --budget 0.40 --output /tmp/cortex-tasks.json
+```
+
+The local embedding model is downloaded once (roughly 470 MB) and runs in the daemon, offline. Basic lexical learning works without it. Context counters use `cl100k_base`; task evaluations use provider input/output/cache usage and independently grade the resulting code. Small samples are not guarantees of savings. The live evaluator uses temporary projects and synthetic, locally verified experience; it does not read your personal memories.
+
+The checked-in [0.10.0 evaluation](docs/evaluations/0.10.0.json) contains 12 valid live runs (three per arm across two synthetic tasks), all passing the independent grader. Mean total tokens changed by **+7.58%** for environment flags and **−20.32%** for expiry handling. Both results are retained; these small samples do not establish general savings. The real multilingual daemon/hook check also passed, with roughly 90–110 ms per hook including process startup on the test machine.
+
+The [0.11.0 evaluation](docs/evaluations/0.11.0.json) expands this to five tasks, including multifile changes, shared-helper refactoring and task resumption. It preserves 20 initial runs and 20 runs after correcting guidance that could duplicate native editor reads. All 40 passed their independent graders. In the final sample, mean token changes were **+6.66%** (flags), **−21.93%** (expiry), **−2.94%** (multifile money), **+0.58%** (refactoring) and **+1.73%** (resumption). The initial refactoring regression of +26.21% remains recorded. `--check-regression` exits nonzero for lost quality or a per-task increase above 25%; the final sample passes this gate, which is not a guarantee of savings.
+
+## Recovery and Codex
+
+Both clients use the same local `learning.db`. Project knowledge keeps its repository origin and source fingerprints. Hooks first persist minimized events to an atomic disk queue; retries preserve session ordering and acknowledge only after durable effects. SQLite writes use WAL and `synchronous=FULL`. No extra model call is needed for recovery.
+
+```bash
+cortex-claude setup --hooks-only
+cortex-claude recovery install-codex
+cortex-claude recovery install-services   # macOS: daemon and dashboard at user login
+cortex-claude recovery status
+cortex-claude recovery self-test          # isolated capture/save/reconnect/restore proof
+cortex-claude recovery diagnose           # sample services and record state changes
+cortex-claude recovery backup             # creates, verifies and tests restoration
+cortex-claude recovery list
+cortex-claude recovery verify SNAPSHOT_ID
+cortex-claude recovery restore SNAPSHOT_ID --destination /absolute/new/recovered-directory
+```
+
+Restart Codex and review the Cortex commands using `/hooks`. [Codex requires explicit hook trust](https://learn.chatgpt.com/docs/hooks); setup preserves other MCP servers/hooks/instructions and never bypasses that review. MCP tools can connect before hooks are trusted, but automatic checkpoints require working hooks. The dashboard distinguishes configuration from received client events.
+
+The **Saúde & recuperação** dashboard shows service availability, pending work, last durable knowledge/checkpoint write, connected clients and verified backups. It can retry pending operations, create a backup, test restoration and recover a separate copy. Automatic checkpoints retain a compact request, up to five changed paths and the last assistant report; that report is explicitly unverified. They complement the structured checkpoints saved by the assistant and do not reconstruct every detail of a conversation.
+
+Backups default to every six hours and retain sixteen complete snapshots. Each includes online SQLite backups, configuration and pending operations, with SHA-256 checksums, database integrity checks and a restoration test. Models and login credentials are excluded. A failed backup preserves previous snapshots; a corrupt snapshot is rejected. Restoring always requires a new directory and leaves the active database untouched.
+
+The dashboard reports storage failures explicitly instead of presenting partial archive results as complete. Health checks continue even when another dashboard request fails; a failed health refresh removes the previous availability indicator. Automatic checkpoint configuration and confirmed client events are shown separately.
+
+The **Prova de memória entre sessões** action runs eight checks against disposable data: both clients' hook handlers, persistence, retrieval by a different process, context deduplication, MCP reconnection, and backup restoration. It does not activate client hooks or prove that an AI model followed the retrieved memory. Real capture, durable save and context-delivery timestamps appear separately for each client. The daemon samples health every minute and retains the last 100 incident/recovery transitions locally without prompts or tool output.
+
+Project refresh now builds a bounded static map (up to 240 compatible source files and 2 MB of changed source per scan), including Vue script blocks. It caches symbols and call candidates, reuses unchanged files, discovers additions, removes deleted sources, and exposes coverage gaps. Changed source files disappear from the current map until refreshed; affected human/assistant conclusions enter a review queue and stay out of automatic context until explicitly revalidated. Static calls do not establish runtime behavior or business semantics.
+
+The [0.14.0 evaluation](docs/evaluations/0.14.0.json) contains eight live runs across two tasks and two clients, all passing independent graders. Token changes were **−40.83% / +1.60% for Claude** and **+0.33% / +0.32% for Codex** (expiry / multifile money). These are single pairs, not evidence of universal savings. Codex evaluation uses explicit memory retrieval with personal hooks disabled; its deferred hook authorization remains untouched. Cached Codex input is counted once, and no Codex dollar cost is inferred. The adapter follows the [official non-interactive JSONL contract](https://learn.chatgpt.com/docs/non-interactive-mode).
+
+```bash
+uv run python scripts/evaluate_tasks.py --live --client codex --model YOUR_MODEL --case expiry-units-v1 --output /tmp/codex-evaluation.json
+uv run python scripts/release.py build --output /tmp/cortex-release
+uv run python scripts/release.py rollback --previous /path/to/0.13.0.whl --current /path/to/0.14.0.whl --output /tmp/rollback.json
+```
+
+Release verification rebuilds the dashboard and wheel twice, requires identical SHA-256 hashes, and checks bundled assets. Rollback verification installs both actual wheels in a disposable virtual environment and checks notes, checkpoints and SQLite integrity through old → new → old → new. The new code cache is additive and retains schema-5 compatibility with 0.13.0. This does not authorize downgrading to older schema versions. The CI release path publishes the exact verified wheel after Python and browser checks; local verification does not claim a remote CI run passed.
+
+To use a restored directory, stop clients and the two Cortex services, preserve the existing directory, and configure both clients and services to use the recovered directory through `CORTEX_HOME` before starting them again. Do not copy SQLite files over a running service. The recovery directory contains the data and pending queue, not installed hooks, launch agents or cached models: rerun setup/client/service installation for that directory. Test it in isolation before switching production memory.
+
+On macOS, launchd restarts a failed daemon/dashboard and starts them after user login. To stop automatic services, use `launchctl bootout gui/UID/com.cortexclaude.daemon` and the corresponding `.web` label (replace `UID` with `id -u`); retain the plists to re-enable with `launchctl bootstrap`. This does not promise operation before login or recovery of input that never reached a hook. A local backup does not protect against losing the computer or its disk; configure `reliability.mirror_directory` to an existing external/synchronized directory for a second copy. No system guarantees complete semantic recall or 100% availability.
 
 ## Key Features
 
@@ -85,12 +164,12 @@ The system stops at the cheapest layer that answers the question. **66% fewer to
 - **Temporal awareness** &mdash; facts detect when things happened ("in April 2024", "yesterday", "since v2") and attach timestamps
 - **Confidence recalibration** &mdash; facts gain confidence when accessed frequently, lose it when contradicted by newer information
 - **Decay system** &mdash; unused memories lose relevance over time, keeping results fresh
-- **Auto-capture** &mdash; hooks automatically save tool results (Bash, Read, Grep, Edit, Write) to memory
-- **Session context injection** &mdash; injects memory stats and known facts at session start
+- **Auto-capture** &mdash; direct preferences and test receipts are captured by hooks; raw tool-result archival is opt-in
+- **Task context injection** &mdash; supplies relevant learned conclusions before a prompt, with deduplication and a token budget
 - **Background daemon** &mdash; pre-loaded model for instant saves via Unix socket (~0.3s vs ~5s cold start)
 - **Multi-language** &mdash; EN, PT (auto-detected). ES, DE, FR with additional spaCy models
 - **Embedding model choice** &mdash; 11 models supported, from fast (all-MiniLM, 384d) to high-quality (bge-large, 1024d). Auto-detects dimensions
-- **Local-first** &mdash; SQLite + local embeddings + local NLP. Zero API calls, zero network, zero cost
+- **Local-first** &mdash; SQLite + local embeddings + local NLP. No additional model API calls for local learning; initial model downloads need network access
 - **Privacy tags** &mdash; wrap sensitive content in `<private>...</private>` to exclude it from memory
 - **Fully configurable** &mdash; all thresholds, ratios, and behaviors via config.json
 
@@ -114,13 +193,13 @@ cortex-claude setup
 
 That's it. The setup command:
 - Configures the MCP server globally for Claude Code
-- Installs hooks (SessionStart, PreToolUse, PostToolUse)
+- Installs hooks (SessionStart, UserPromptSubmit, PostToolUse, PostToolUseFailure, Stop), preserving unrelated hooks
 - Creates `~/.claude/CLAUDE.md` with instructions for Claude to use Cortex automatically
-- Downloads the embedding model (~80MB) and spaCy model (~12MB)
+- Downloads archive embeddings (~80MB), multilingual learning embeddings (~470MB) and the spaCy model (~12MB)
 - Starts the background daemon for instant saves
 - Prints a clear pass/fail summary for every step, and is safe to re-run if anything failed (e.g. a model download blocked by a proxy/firewall)
 
-Restart Claude Code and it works in **every project**, no per-project config needed. Claude will automatically consult Cortex before saying "I don't know" and save important context to memory.
+Restart Claude Code and it works in **every project**, no per-project config needed. Relevant learned context arrives automatically; Claude can request more detail when needed.
 
 ### Upgrading
 
@@ -181,10 +260,13 @@ Just talk to Claude naturally. Cortex works in the background:
 
 ## Tools
 
-Cortex exposes **10 MCP tools** to Claude Code:
+Cortex exposes **11 MCP tools** to Claude Code:
 
 | Tool | What it does | Token cost |
 |------|-------------|------------|
+| `cortex_learn` | Observe, correct, inspect or forget shared learning | Compact notes, up to 80 tokens |
+| `cortex_read` | Bounded file inspection with session-local diffs | Default 800, hard limit 4,000 tokens |
+| `cortex_task` | Save, resume and complete work checkpoints | Checkpoint fields up to 240 tokens |
 | `cortex_save` | Store memory with auto fact extraction, summarization, and embedding | N/A |
 | `cortex_recall` | Progressive retrieval: facts &rarr; summaries &rarr; full content | Controlled via `max_tokens` |
 | `cortex_facts` | Direct knowledge graph query, returns structured triplets | ~5-15 tokens per fact |
@@ -252,15 +334,13 @@ Recalculated on server startup. Frequently accessed memories get boosted. Stale 
 
 ### Auto-Capture &amp; Hooks
 
-Cortex uses Claude Code hooks to work automatically:
+Cortex installs three hooks globally, preserving hooks from other tools:
 
-- **SessionStart** &mdash; injects memory stats and known facts when you open a session. Claude knows it has memory and consults it before saying "I don't know". It also fires a fire-and-forget request to the daemon to index the whole current project into the code graph (`cortex_index_code`-equivalent scan, capped at 2000 files) if that scope hasn't been indexed yet &mdash; so the first question about an unfamiliar codebase can often be answered via `cortex_code(symbol)` instead of exploratory Read/Grep. Runs once per project: subsequent sessions skip the scan and rely on the incremental Read/Edit indexing to keep it fresh. If no scope is explicitly linked for the project directory, indexing uses an auto-derived `project:<dir-name>` scope rather than polluting `global`.
-- **PreToolUse** (Bash only) &mdash; rewrites a small, conservative set of known-verbose commands to compact, semantically-equivalent flags before execution (e.g. `git status` &rarr; `git status --short --branch`, `git log` &rarr; `git log --oneline -n 20`). Only rewrites exact recognized patterns; a command that already has custom flags passes through untouched. This reduces tokens the agent has to read from command output itself &mdash; complementary to, not a replacement for, memory capture.
-- **PostToolUse** &mdash; captures results from **all tools** in background: Bash, Read, Edit, Write, Grep, Glob, Agent, WebSearch, WebFetch, and all third-party MCP tools. Code files (Python, JS/TS, Go, Java, Swift, Kotlin) trigger an additional `index_code` step that extracts symbols into the code graph.
-- **Capture filter** &mdash; before persisting, every auto-captured save passes through a heuristic gate (size, signal keywords, tool type, entity density). `ls`, trivial reads, and noisy edits are dropped. Ambiguous cases can optionally consult an LLM judge.
-- **Background Daemon** &mdash; keeps the embedding model pre-loaded via Unix socket. First save after boot: ~5s (model load). Subsequent saves: **~0.3s**. On the first startup after upgrading to v0.6.0 (schema v7), the daemon auto-backfills clusters for any scope with memories but no clusters yet.
+- **SessionStart** registers the session and starts code indexing in the background. It does not inject unrelated facts or a repeated tool manual. After compaction it resets delivery receipts so relevant lessons can be supplied again.
+- **UserPromptSubmit** observes direct user preferences and retrieves learned context before Claude answers. The same session cannot confirm a lesson twice, and already-delivered notes are omitted.
+- **PostToolUse** maintains the code graph for Read/Edit/Write. Raw tool-result capture is **off by default**; `learning.capture_tools` only enables other eligible tool results. Bash, file operations and internal task transcripts are always excluded. Tool output never confirms a personal preference.
 
-All hooks are installed globally by `cortex-claude setup`. No per-project config needed.
+`<private>` content is removed before clipping. The previous command-rewriting PreToolUse hook is removed on upgrade. The daemon handles the optional code graph and archive operations; learned context uses a lightweight local SQLite path without loading PyTorch or spaCy.
 
 ### Code Graph
 
@@ -318,16 +398,18 @@ cortex-claude web
 # Opens at http://localhost:37800
 ```
 
-The dashboard navigates the way recall does &mdash; cheapest layer first. It never
-draws the whole graph, so it stays responsive on a database with tens of
-thousands of facts.
+The web dashboard uses Vue 3 and [Mavis Web](https://mavis-ui.getcortexlabs.com/), with light/dark themes and responsive navigation. The graph remains bounded and loads only when needed.
 
 Features:
-- **Cluster map** &mdash; the landing view is your semantic sub-graphs, sized by member count. Open one to see its own sub-graph and its strongest memories.
+- **Overview and learning** &mdash; active lessons, provenance, usefulness feedback, review state and deletion.
+- **Task handoffs** &mdash; inspect decisions and next steps, mark complete or forget, with stale-file warnings.
+- **Conflict review** &mdash; compare evidence, select a conclusion or give it specific conditions.
+- **Economy and quality** &mdash; provider-measured task comparisons, local duplicate-read estimates and omission reasons; increases in consumption stay visible.
+- **Connections** &mdash; open a topic to see its sub-graph and related memories, with a keyboard-accessible entity picker.
 - **Entity focus** &mdash; click a node for that entity's neighbourhood, its facts, and the memories that mention it.
 - **Memory browser** &mdash; search, filter by scope and tag, sort by recency, relevance, last use or size. Paginated server-side.
 - **Bulk cleanup** &mdash; select by tag, scope, cluster or regex and preview exactly what goes before anything is deleted. Removing a memory takes its facts and its vector with it.
-- **Live stats** &mdash; memory and fact counts, clusters, storage, and a 30-day intake sparkline for spotting the day auto-capture ran away with itself.
+- **Live stats** &mdash; memory and learning counters refresh while the page is visible. Browser tests exercise the real local API against disposable data.
 
 The dashboard binds to localhost only, sends no CORS headers, and validates
 `Host` and `Origin` so no other page in your browser can read or modify your
@@ -357,7 +439,7 @@ Most memory solutions for AI assistants follow the same pattern: capture observa
 
 ### Where Cortex wins
 
-- **Token efficiency** &mdash; 66% fewer tokens returned. Progressive recall stops at the cheapest sufficient layer.
+- **Token efficiency** &mdash; bounded learned context with repeated delivery suppressed; archive recall offers facts, summaries and full content.
 - **Structured understanding** &mdash; knowledge graph with traversal vs flat text. Ask "what's connected to auth?" and get real graph navigation.
 - **Entity intelligence** &mdash; normalizes and deduplicates entities across memories. "postgres", "PostgreSQL", and "pg" are the same thing.
 - **Freshness** &mdash; decay system ensures frequently accessed memories rank higher. Old, unused memories fade.
@@ -381,7 +463,7 @@ Traditional solutions observe and replay. Cortex understands, structures, and re
 
 ## Benchmarks
 
-With 10 stored memories (244 total tokens):
+Historical archive microbenchmark with 10 stored memories (244 total tokens), separate from the shared-learning evaluation:
 
 | Depth | Tokens returned | Reduction | Latency |
 |-------|----------------|-----------|---------|
@@ -528,3 +610,11 @@ MIT &mdash; see [LICENSE](LICENSE).
 <p align="center">
   <strong>Built with Python</strong> &bull; <strong>Powered by Claude Code</strong> &bull; <strong>Made by <a href="https://github.com/rafaelaugustos">Rafael Augusto</a></strong>
 </p>
+
+### Project knowledge, without execution noise
+
+`cortex_project` reads bounded manifests and documentation headings, identifies modules, declared technologies and development commands, and stores them in the shared `learning.db`, keyed by repository path. SessionStart refreshes this structure in the background; `learning.project_memory: false` disables it. No package script is executed.
+
+The assistant reads relevant docs/source files and uses `cortex_project(action="note", section="architecture", content="…", sources=["src/app.py"])` to save concise conclusions about purpose, architecture, conventions and decisions. Each conclusion keeps source fingerprints. Changed sources suspend automatic reuse until the assistant reviews and records the conclusion again; refreshing manifests alone does not validate notes. `read` returns bounded details (800 estimated tokens by default, up to 2,000). Automatic project context shares the existing message/session budget and is delivered once per project revision per session, after higher-priority memories.
+
+The Mavis dashboard's **Projetos** page shows structured knowledge and its sources. Archive schema v9 moves previously auto-captured execution transcripts, their facts and vectors into recoverable history tables. **Histórico de execução** provides read-only access; these records no longer participate in recall, graph connections or memory clusters. Curated instructions such as how to run tests remain valid memories. Existing raw logs are preserved, not converted into unsupported conclusions.

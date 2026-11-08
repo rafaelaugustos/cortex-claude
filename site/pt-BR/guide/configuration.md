@@ -90,3 +90,20 @@ O `similarity_threshold` dos [clusters](./clusters) (0,70 por padrão).
 ## Armazenamento
 
 `max_db_size_mb` limita o tamanho do banco.
+
+## Aprendizado compartilhado
+
+A seção `learning` controla confirmações independentes, limite de tokens e captura bruta. Veja [os padrões e exemplos](./capture#controle-de-tokens).
+
+| Opção de aprendizado | Padrão | Finalidade |
+| --- | --- | --- |
+| `semantic_enabled` | `true` | Embeddings locais; busca por palavras como alternativa |
+| `semantic_model` | `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` | Vetores associados ao modelo |
+| `semantic_merge_threshold` | `0.88` | Consolidação conservadora de paráfrases |
+| `semantic_recall_threshold` | `0.65` | Recuperação sem palavras em comum |
+| `semantic_timeout_ms` | `250` | Tempo máximo de espera no hook |
+| `max_detail_tokens` | `600` | Limite de detalhes por experiência/leitura |
+| `experience_ttl_days` | `90` | Prazo para revalidar experiências |
+| `measure_usage` | `true` | Contadores incrementais do histórico principal |
+
+`learning.project_memory` (default `true`) refreshes bounded project structure in the shared database at session start. Disabling it stops refresh and automatic project context.
