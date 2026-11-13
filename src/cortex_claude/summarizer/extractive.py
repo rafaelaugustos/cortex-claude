@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-import spacy
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import spacy
 
 from cortex_claude.embeddings.tokenizer import count_tokens
 from cortex_claude.summarizer.scoring import entity_density_score, position_score, tfidf_scores
@@ -26,6 +29,8 @@ def _detect_lang(text: str) -> str:
 
 def _get_nlp(lang: str = "en") -> spacy.Language:
     if lang not in _models:
+        import spacy
+
         model_name = LANG_MODELS.get(lang, LANG_MODELS["en"])
         try:
             _models[lang] = spacy.load(model_name)

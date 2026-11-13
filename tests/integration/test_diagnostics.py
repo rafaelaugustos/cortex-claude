@@ -10,13 +10,33 @@ from cortex_claude.reliability.files import read_json
 def test_probe_cross_process_preserves_live_data_and_does_not_mark_client_active(tmp_path):
     (tmp_path / 'learning.db').write_bytes(b'untouched live database')
     result = probe.run(tmp_path)
-    assert result['status'] == 'passed', result
+    assert result['status'] == 'passed', json.dumps(result, indent=2)
     assert len(result['checks']) == 8
     assert result['client_activation_tested'] is False
     assert (tmp_path / 'learning.db').read_bytes() == b'untouched live database'
     assert not (tmp_path / 'recovery/state.json').exists()
     assert not list((tmp_path / 'recovery').glob('probe-*'))
     assert read_json(tmp_path / 'recovery/probe.json')['status'] == 'passed'
+
+
+def test_probe_records_transport_stage_and_nested_error_without_private_data(tmp_path, monkeypatch):
+    async def failed_transport(home, repo, client, name, arguments, progress):
+        progress(f'mcp:{client}:initialize')
+        raise ExceptionGroup('private transport details', [
+            TimeoutError('private subprocess output'),
+        ])
+
+    monkeypatch.setattr(probe, '_mcp', failed_transport)
+    result = probe.run(tmp_path)
+    assert result['status'] == 'failed'
+    assert len(result['checks']) == 7
+    assert result['checks'][-1] == {'name': 'mcp:claude:initialize', 'passed': False,
+                                   'error': 'ExceptionGroup', 'causes': ['TimeoutError']}
+    assert result['client_activation_tested'] is False
+    saved = read_json(tmp_path / 'recovery/probe.json')
+    assert saved == result
+    assert 'private' not in json.dumps(saved)
+    assert not list((tmp_path / 'recovery').glob('probe-*'))
 
 
 def test_diagnostics_records_incidents_and_recovery_without_repeating_events(tmp_path, monkeypatch):

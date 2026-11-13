@@ -48,6 +48,12 @@ uv tool upgrade cortex-claude
 cortex-claude setup
 ```
 
+## Codex hook approval
+
+Run `cortex-claude recovery install-codex`, restart Codex, and review the Cortex entries in `/hooks`. Setup writes `~/.codex/hooks.json`; it does not grant trust.
+
+`plugin contents changed; hook approval required` means Codex skipped a changed plugin hook. Check its source in `/hooks` and review that plugin's changes. The message alone does not identify Cortex. MCP access and automatic capture are separate: a working memory tool does not prove that hooks are running. See [Codex hook trust](https://learn.chatgpt.com/docs/hooks#review-and-trust-hooks).
+
 ## With pip
 
 ```sh

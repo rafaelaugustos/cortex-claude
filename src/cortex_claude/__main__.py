@@ -23,8 +23,8 @@ def main() -> None:
         from cortex_claude.web.server import run_web
         run_web(port=port)
     else:
-        from cortex_claude.server.app import mcp, _init_engine
-        _init_engine()
+        from cortex_claude.server.app import mcp, _record_connection
+        _record_connection()
         mcp.run(transport="stdio")
 
 
