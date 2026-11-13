@@ -6,6 +6,7 @@ import os
 import socket
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from cortex_claude.core.privacy import strip_private
@@ -13,6 +14,7 @@ from cortex_claude.learning.config import LearningConfig
 from cortex_claude.learning.extraction import extract_observations
 from cortex_claude.learning.store import LearningStore
 from cortex_claude.learning.semantic import SemanticClient, SemanticService
+from cortex_claude.reliability.hook_input import MAX_HOOK_INPUT_BYTES, HookInputTooLarge, read_input
 
 
 def _send(home: Path, payload: dict, timeout: float = .4) -> bool:
@@ -123,8 +125,13 @@ def process_event(event: str, payload: dict, home: Path, *, retrieve: bool = Tru
 
 def run_hook(event: str, client: str = 'claude') -> None:
     home = Path(os.environ.get("CORTEX_HOME", "~/.cortex-claude")).expanduser()
+    stage, input_bytes = 'read_input', None
     try:
-        payload = json.loads(sys.stdin.read(1_000_000))
+        raw = read_input(sys.stdin.buffer)
+        input_bytes = len(raw)
+        stage = 'parse_input'
+        payload = json.loads(raw.decode('utf-8'))
+        del raw
         if not isinstance(payload, dict):
             return
         if 'cortex' in str(payload.get('tool_name', '')).lower():
@@ -132,14 +139,17 @@ def run_hook(event: str, client: str = 'claude') -> None:
         from cortex_claude.reliability.events import normalize, apply
         from cortex_claude.reliability.queue import enqueue, drain
         from cortex_claude.reliability.checkpoints import startup_context
+        stage = 'normalize'
         data = normalize(event, payload, client)
         ident = f"{client}:{data.get('session_id')}:{event}:{data.get('turn_id')}:{data.get('tool_use_id')}" if data.get('turn_id') or data.get('tool_use_id') else None
+        stage = 'enqueue'
         job_id = enqueue(home, 'hook', {'event': event, 'data': data}, ident)
         from cortex_claude.reliability.files import state
-        import time
         state(home, **{f'client_{client}_received_at': time.time()})
+        stage = 'drain'
         drain(home, lambda job: apply(home, job), limit=8, seconds=.6, kinds={'hook'})
         result: dict = {}
+        stage = 'context'
         config = LearningConfig.load(home)
         if config.enabled and event in {'SessionStart', 'UserPromptSubmit'}:
             with LearningStore(home, config, SemanticClient(home, config)) as store:
@@ -158,16 +168,29 @@ def run_hook(event: str, client: str = 'claude') -> None:
         if result or (client == 'codex' and event == 'Stop'):
             print(json.dumps(result, ensure_ascii=False))
         if event == 'SessionStart':
+            stage = 'start_daemon'
             _start_daemon(home, data['cwd'])
     except Exception as error:
-        # Hook failures must not block user prompts. Record the type and
-        # message (not the user's input) for doctor/status to expose.
+        # Preserve the legacy marker, plus safe metadata identifying the stage.
+        # Never log exception messages, input fragments, or JSONDecodeError.doc.
         try:
             home.mkdir(parents=True, exist_ok=True)
             (home / "hook-error.log").write_text(f"{event}: {type(error).__name__}\n")
+            from cortex_claude.reliability.files import write_json
+            write_json(home / 'recovery/hook-error.json', {
+                'event': event, 'client': client, 'type': type(error).__name__,
+                'stage': stage, 'at': time.time(),
+                'input_bytes_read': MAX_HOOK_INPUT_BYTES + 1 if isinstance(error, HookInputTooLarge) else input_bytes,
+                'input_limit_bytes': MAX_HOOK_INPUT_BYTES,
+            })
         except OSError:
             pass
-        message = f'Cortex: falha ao salvar/processar memória ({type(error).__name__}). Confira Saúde no dashboard; este evento pode não ter sido salvo.'
+        if isinstance(error, HookInputTooLarge):
+            message = 'Cortex: evento excedeu o limite de entrada de 8 MiB e não foi salvo. Confira Saúde no dashboard.'
+        elif stage == 'parse_input' and isinstance(error, (json.JSONDecodeError, UnicodeDecodeError)):
+            message = f'Cortex: entrada do hook não é JSON UTF-8 válido ({type(error).__name__}); este evento não foi salvo. Confira Saúde no dashboard.'
+        else:
+            message = f'Cortex: falha ao salvar/processar memória ({type(error).__name__}, etapa: {stage}). Confira Saúde no dashboard; este evento pode não ter sido salvo.'
         print(message, file=sys.stderr)
         if event not in {'PreCompact', 'PostCompact', 'SessionEnd'}:
             print(json.dumps({'systemMessage': message}))

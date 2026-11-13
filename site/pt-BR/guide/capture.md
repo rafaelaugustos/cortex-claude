@@ -39,6 +39,8 @@ O setup preserva hooks de outras ferramentas e instala:
 
 Trechos privados são removidos antes de qualquer corte. O antigo hook que reescrevia comandos é removido. Veja [Privacidade](./privacy).
 
+Os hooks aceitam documentos JSON UTF-8 completos de até 8 MiB (8.388.608 bytes). Eventos maiores são recusados explicitamente antes da análise ou entrada na fila; não são salvos e não podem ser recuperados por nova tentativa na fila. Eventos aceitos são normalizados antes da gravação, sem salvar a saída bruta das ferramentas como conhecimento. O diagnóstico registra a etapa, o tipo da exceção e a quantidade de bytes, sem o conteúdo da entrada; o painel Saúde distingue entrada grande demais de JSON inválido.
+
 ## Controle de tokens
 
 Padrões: até 180 tokens estimados por mensagem, reduzidos a 96 em consultas curtas ou com correspondência fraca, cinco notas e 600 tokens por sessão. O envelope inteiro conta. Detalhes via `cortex_learn action="read"` compartilham o limite da sessão e são entregues uma vez. Informe a `query` atual para verificar condições. A compactação reinicia os recibos de entrega.

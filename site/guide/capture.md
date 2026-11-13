@@ -39,6 +39,8 @@ Setup preserves unrelated hooks and installs:
 
 Private spans are removed before clipping. The previous command-rewriting PreToolUse hook is removed. See [Privacy](./privacy).
 
+Hook input accepts complete UTF-8 JSON documents up to 8 MiB (8,388,608 bytes). Larger events are rejected explicitly before parsing or queueing; they are not saved and cannot be retried from the recovery queue. Accepted events are normalized before storage, so large tool output is not saved as raw knowledge. Failure diagnostics record the stage, exception type and byte count, without input contents; the Health dashboard distinguishes oversized input from invalid JSON.
+
 ## Token controls
 
 Defaults: at most 180 estimated tokens per prompt, reduced to 96 for short/weak matches, five notes and 600 tokens per session. The complete context envelope counts. Details requested with `cortex_learn action="read"` share the session budget and are delivered once. Supply the current `query` when a lesson has conditions. Compaction resets delivery receipts.

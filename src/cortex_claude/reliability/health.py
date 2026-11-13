@@ -90,14 +90,29 @@ def report(home: Path) -> dict:
         clients[client] = {'configured': configured, 'last_hook_at': current.get(f'client_{client}_at'), 'last_mcp_at': current.get(f'mcp_{client}_at'),
                            'last_received_at': current.get(f'client_{client}_received_at'), 'last_saved_at': current.get(f'client_{client}_saved_at'), 'last_context_at': current.get(f'client_{client}_context_at')}
     error_file = home / 'hook-error.log'
+    try:
+        hook_error = read_json(home / 'recovery/hook-error.json')
+    except (OSError, ValueError):
+        hook_error = {}
     if error_file.exists() and error_file.stat().st_mtime > current.get('last_applied_at', 0):
-        issues.append('Um hook não conseguiu confirmar o salvamento. Confira a integração do cliente.')
+        recorded_at = hook_error.get('at')
+        if not isinstance(recorded_at, (int, float)) or recorded_at < error_file.stat().st_mtime:
+            # An older process may have written a newer legacy marker, or the
+            # metadata write may have failed. Do not attribute that failure to
+            # the previous diagnostic.
+            hook_error = {}
+        if hook_error.get('type') == 'HookInputTooLarge':
+            issues.append('Um evento do hook excedeu o limite de entrada de 8 MiB e não foi salvo.')
+        elif hook_error.get('stage') == 'parse_input':
+            issues.append('Um evento do hook não continha JSON UTF-8 válido e não foi salvo.')
+        else:
+            issues.append('Um hook não conseguiu confirmar o salvamento. Confira a integração do cliente.')
     try:
         probe = read_json(home / 'recovery' / 'probe.json')
     except (OSError, ValueError):
         probe = {'status': 'unreadable'}
     return {'version': __version__, 'instance': identity(home), 'status': 'attention' if issues else 'healthy', 'issues': issues,
-            'diagnostics': history(home), 'self_test': probe,
+            'diagnostics': history(home), 'self_test': probe, 'hook_error': hook_error,
             'daemon': {'running': daemon.get('status') == 'running', 'semantic': daemon.get('semantic', 'unavailable')},
             'last_saved_at': saved_at, 'last_processed_at': current.get('last_applied_at'), 'heartbeat_at': current.get('heartbeat_at'),
             'queue': {'pending': len(jobs), 'failures': len(failures), 'oldest_at': jobs[0]['created_at'] if jobs else None,
