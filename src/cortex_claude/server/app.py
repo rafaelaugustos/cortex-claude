@@ -3,28 +3,22 @@ from __future__ import annotations
 import os
 import json
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from mcp.server.fastmcp import FastMCP
 
-from cortex_claude.core.engine import CortexEngine
-from cortex_claude.server.config import CortexConfig
-from cortex_claude.server.tools.clusters import handle_clusters
-from cortex_claude.server.tools.code import handle_code, handle_index_code
-from cortex_claude.server.tools.facts import handle_facts
-from cortex_claude.server.tools.forget import handle_forget
-from cortex_claude.server.tools.recall import handle_recall
-from cortex_claude.server.tools.save import handle_save
-from cortex_claude.server.tools.scopes import handle_scopes
-from cortex_claude.server.tools.status import handle_status
-from cortex_claude.server.tools.traverse import handle_traverse
 from cortex_claude.server.tools.learn import handle_learn
+
+if TYPE_CHECKING:
+    from cortex_claude.core.engine import CortexEngine
+
 
 mcp = FastMCP("cortex-claude")
 engine: CortexEngine | None = None
 
 
 def _get_engine() -> CortexEngine:
+    # Recovery tools must stay available without importing the archive/ML stack.
     if engine is None:
         _init_engine()
     assert engine is not None
@@ -32,13 +26,25 @@ def _get_engine() -> CortexEngine:
 
 
 def _init_engine() -> None:
+    from cortex_claude.core.engine import CortexEngine
+    from cortex_claude.server.config import CortexConfig
+
     global engine
     base_path = Path(
         os.environ.get("CORTEX_HOME", str(Path.home() / ".cortex-claude"))
     ).expanduser()
     config = CortexConfig.load(base_path)
-    engine = CortexEngine(config=config)
-    engine.initialize()
+    initialized = CortexEngine(config=config)
+    try:
+        initialized.initialize()
+    except Exception:
+        initialized.close()
+        raise
+    engine = initialized
+
+
+def _record_connection() -> None:
+    base_path = Path(os.environ.get("CORTEX_HOME", "~/.cortex-claude")).expanduser()
     from cortex_claude.reliability.files import state
     import time
     client = os.environ.get('CORTEX_CLIENT', 'claude')
@@ -147,6 +153,8 @@ async def cortex_save(
     scope: str | None = None,
 ) -> str:
     """Archive reference information with facts, a summary and embeddings. Use cortex_learn for preferences and reusable lessons."""
+    from cortex_claude.server.tools.save import handle_save
+
     return await handle_save(_get_engine(), content, _cwd(), tags, scope)
 
 
@@ -158,6 +166,8 @@ async def cortex_recall(
     depth: Literal["auto", "facts", "summaries", "full"] = "auto",
 ) -> str:
     """Retrieve learned and archived context within max_tokens. depth: auto, facts, summaries or full. Skip when the needed context was already supplied automatically."""
+    from cortex_claude.server.tools.recall import handle_recall
+
     return await handle_recall(_get_engine(), query, _cwd(), max_tokens, scope, depth)
 
 
@@ -169,6 +179,8 @@ async def cortex_facts(
     limit: int = 20,
 ) -> str:
     """Query subject-relation-object facts by topic, optionally filtering relation and scope."""
+    from cortex_claude.server.tools.facts import handle_facts
+
     return await handle_facts(_get_engine(), topic, _cwd(), relation, scope, limit)
 
 
@@ -179,6 +191,8 @@ async def cortex_traverse(
     scope: str | None = None,
 ) -> str:
     """Follow knowledge-graph connections up to max_hops. start accepts an entity or cluster:<id>."""
+    from cortex_claude.server.tools.traverse import handle_traverse
+
     return await handle_traverse(_get_engine(), start, _cwd(), max_hops, scope)
 
 
@@ -190,6 +204,8 @@ async def cortex_forget(
     dry_run: bool = True,
 ) -> str:
     """Delete archived memories by query or ID. dry_run=true previews. Use cortex_learn action=forget for learned preferences."""
+    from cortex_claude.server.tools.forget import handle_forget
+
     return await handle_forget(_get_engine(), _cwd(), query, memory_id, scope, dry_run)
 
 
@@ -200,6 +216,8 @@ async def cortex_scopes(
     path: str | None = None,
 ) -> str:
     """Manage legacy archive scopes and directory mappings: list, create, delete, link, unlink or info. Shared learning requires no scope setup."""
+    from cortex_claude.server.tools.scopes import handle_scopes
+
     return await handle_scopes(_get_engine(), action, _cwd(), name, path)
 
 
@@ -208,6 +226,8 @@ async def cortex_status(
     scope: str | None = None,
 ) -> str:
     """Show archive statistics, shared learning counts and estimated context tokens injected/avoided."""
+    from cortex_claude.server.tools.status import handle_status
+
     return await handle_status(_get_engine(), _cwd(), scope)
 
 
@@ -217,6 +237,8 @@ async def cortex_code(
     scope: str | None = None,
 ) -> str:
     """Look up a symbol definition, callers, callees and imports before reading a whole file. Accepts path:symbol to disambiguate."""
+    from cortex_claude.server.tools.code import handle_code
+
     return await handle_code(_get_engine(), _cwd(), symbol, scope)
 
 
@@ -227,6 +249,8 @@ async def cortex_index_code(
     recursive: bool = True,
 ) -> str:
     """Index source symbols and calls from a file/directory. Supports Python, JS/TS, Go, Java, Swift and Kotlin; skips dependency/build directories."""
+    from cortex_claude.server.tools.code import handle_index_code
+
     return await handle_index_code(_get_engine(), _cwd(), path, scope, recursive)
 
 
@@ -237,4 +261,6 @@ async def cortex_clusters(
     limit: int = 50,
 ) -> str:
     """List semantic archive clusters or rebuild them with action=backfill."""
+    from cortex_claude.server.tools.clusters import handle_clusters
+
     return await handle_clusters(_get_engine(), _cwd(), action, scope, limit)
