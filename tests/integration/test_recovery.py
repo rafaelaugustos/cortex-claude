@@ -262,18 +262,31 @@ def test_daemon_restart_drains_persisted_events_and_rejects_duplicate_instance(e
     data = normalize('UserPromptSubmit', {'session_id': 'recover', 'cwd': str(repo), 'prompt': 'Implementar parser de pedidos'}, 'codex')
     enqueue(home, 'hook', {'event': 'UserPromptSubmit', 'data': data})
     env = {**os.environ, 'CORTEX_HOME': str(home)}
+    guard = home / 'import-guard'
+    guard.mkdir()
+    (guard / 'sitecustomize.py').write_text('''
+import sys
+class NoModelImports:
+    def find_spec(self, fullname, *args):
+        if fullname in {'torch', 'spacy', 'sentence_transformers', 'sklearn'}:
+            raise RuntimeError('Queue recovery must not import ' + fullname)
+sys.meta_path.insert(0, NoModelImports())
+''')
+    env['PYTHONPATH'] = str(guard) + os.pathsep + env.get('PYTHONPATH', '')
     from cortex_claude.reliability.health import ping
     def start():
-        child = subprocess.Popen([sys.executable, '-m', 'cortex_claude', 'daemon'], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        log = home / 'startup.log'
+        with log.open('w') as output:
+            child = subprocess.Popen([sys.executable, '-m', 'cortex_claude', 'daemon'], env=env, stdout=output, stderr=output)
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
             if child.poll() is not None:
-                raise AssertionError('Daemon exited unexpectedly')
+                raise AssertionError('Daemon exited unexpectedly:\n' + log.read_text())
             if ping(home).get('status') == 'running' and not pending(home):
                 return child
             time.sleep(.1)
         child.kill(); child.wait()
-        raise AssertionError('Daemon startup timed out')
+        raise AssertionError('Daemon startup timed out:\n' + log.read_text())
     first = start()
     try:
         duplicate = subprocess.run([sys.executable, '-m', 'cortex_claude', 'daemon'], env=env, timeout=5)

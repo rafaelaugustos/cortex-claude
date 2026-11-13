@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import numpy as np
-from sentence_transformers import SentenceTransformer
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer
 
 MODELS = {
     "all-MiniLM-L6-v2": {"dim": 384, "size": "80MB", "speed": "fast", "quality": "good"},
@@ -34,6 +37,8 @@ class EmbeddingEngine:
 
     def _load(self) -> SentenceTransformer:
         if self._model is None:
+            from sentence_transformers import SentenceTransformer
+
             self._model = SentenceTransformer(self._model_name)
             getter = getattr(self._model, 'get_embedding_dimension', None) or self._model.get_sentence_embedding_dimension
             self._dim = getter()

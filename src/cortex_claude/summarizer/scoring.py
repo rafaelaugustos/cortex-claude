@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer
 
 
 def position_score(index: int, total: int) -> float:
@@ -20,6 +19,8 @@ def entity_density_score(sent) -> float:
 def tfidf_scores(sentences: list[str]) -> np.ndarray:
     if len(sentences) < 2:
         return np.ones(len(sentences))
+
+    from sklearn.feature_extraction.text import TfidfVectorizer
 
     vectorizer = TfidfVectorizer(stop_words="english")
     try:

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-import spacy
-from spacy.tokens import Token
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import spacy
+    from spacy.tokens import Token
 
 from cortex_claude.facts.normalizer import normalize_entity, normalize_relation
 from cortex_claude.models.fact import Fact
@@ -19,6 +22,8 @@ LANG_MODELS = {
 
 def _get_nlp(lang: str = "en") -> spacy.Language:
     if lang not in _models:
+        import spacy
+
         model_name = LANG_MODELS.get(lang, LANG_MODELS["en"])
         try:
             _models[lang] = spacy.load(model_name)
